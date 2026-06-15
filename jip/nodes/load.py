@@ -38,7 +38,7 @@ class JIPLoad(io.ComfyNode):
                     tooltip="Source image to preprocess.",
                 ),
                 io.String.Input("output_name", default="", tooltip="e.g. jjba/josuke"),
-                io.String.Input("output_path", default="cnets/"),
+                io.String.Input("output_path", default="input/cnets/"),
                 io.Combo.Input(
                     "base_dir",
                     options=BASE_DIR_OPTIONS,
@@ -78,7 +78,7 @@ class JIPLoad(io.ComfyNode):
             names=[""],
             dims=(width, height),
             base_root=_BASE_ROOT_BY_LABEL.get(base_dir, "comfy_install"),
-            output_path=(output_path or "cnets/").strip(),
+            output_path=(output_path or "input/cnets/").strip(),
             output_name=output_name.strip(),
         )
         return io.NodeOutput(tensor, payload, ui=ui.PreviewImage(tensor, cls=cls))
