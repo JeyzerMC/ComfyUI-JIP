@@ -1,6 +1,6 @@
 Pillow
 numpy
-# Background removal (B5) — permissive backend, pinned in that issue once chosen.
-# rembg
+# Background removal (B5): rembg is MIT; U²-Net weights are Apache-2.0.
+rembg
 # Controlnet preprocessing (B4) is provided by the separately-installed
 # comfyui_controlnet_aux extension (Apache-2.0); not vendored here.
