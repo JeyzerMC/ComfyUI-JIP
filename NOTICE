@@ -1,0 +1,23 @@
+ComfyUI-JIP
+Copyright (c) 2026 JeyzerMC
+Licensed under the MIT License (see LICENSE).
+
+This product relies on the following third-party components. They are NOT
+bundled or modified; ComfyUI-JIP imports/invokes them at runtime and the user
+installs them separately. Their licenses govern their own code and weights.
+
+-------------------------------------------------------------------------------
+comfyui_controlnet_aux  (https://github.com/Fannovel16/comfyui_controlnet_aux)
+    License: Apache License 2.0
+    Use: JIP CNet Preprocess imports its preprocessor node classes at runtime
+    to generate controlnet hint images (DepthAnythingV2, DWPose, HED, DensePose,
+    CannyEdge, LineArt, Manga2Anime, OpenPose). Individual preprocessor models
+    carry their own upstream licenses; consult that project for details.
+
+-------------------------------------------------------------------------------
+rembg  (https://github.com/danielgatis/rembg)
+    License: MIT
+    Use: JIP RMBG performs background removal.
+    Default model "u2net" (U²-Net) weights: Apache License 2.0.
+    Other selectable models (u2netp, isnet-general-use, silueta) carry their own
+    licenses — verify before commercial/redistribution use.
