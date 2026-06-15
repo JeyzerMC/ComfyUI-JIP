@@ -1,18 +1,51 @@
-"""JIP CNet Preprocess node (stub — implemented in #5)."""
+"""JIP CNet Preprocess node — run controlnet preprocessors (#5).
 
-from comfy_api.v0_0_2 import io
+Soft-depends on `comfyui_controlnet_aux` (Apache-2.0): its preprocessor node
+classes are imported and invoked at runtime; nothing is vendored. Each enabled
+preprocessor appends one suffixed image (e.g. "_depthanythingv2") to the payload.
+"""
 
-# Preprocessor toggles. All on by default except Manga2Anime and OpenPose.
+from __future__ import annotations
+
+import importlib
+
+import torch
+
+from comfy_api.v0_0_2 import io, ui
+
+from ..payload import JIPPayloadIO
+
+# label -> (controlnet_aux node-class key, default-on)
 PREPROCESSORS = [
-    ("DepthAnythingV2", True),
-    ("DWPose", True),
-    ("HED", True),
-    ("DensePose", True),
-    ("CannyEdge", True),
-    ("LineArt", True),
-    ("Manga2Anime", False),
-    ("OpenPose", False),
+    ("DepthAnythingV2", "DepthAnythingV2Preprocessor", True),
+    ("DWPose", "DWPreprocessor", True),
+    ("HED", "HEDPreprocessor", True),
+    ("DensePose", "DensePosePreprocessor", True),
+    ("CannyEdge", "CannyEdgePreprocessor", True),
+    ("LineArt", "LineArtPreprocessor", True),
+    ("Manga2Anime", "Manga2Anime_LineArt_Preprocessor", False),
+    ("OpenPose", "OpenposePreprocessor", False),
 ]
+
+
+def _load_cnet_mappings():
+    for name in ("comfyui_controlnet_aux", "custom_nodes.comfyui_controlnet_aux"):
+        try:
+            module = importlib.import_module(name)
+        except Exception:
+            continue
+        mappings = getattr(module, "NODE_CLASS_MAPPINGS", None)
+        if mappings:
+            return mappings
+    return None
+
+
+def _working_image(payload):
+    """The image preprocessors run on: the edited '_alt' entry if present, else base."""
+    for img, nm in zip(payload.images, getattr(payload, "names", [])):
+        if nm == "_alt":
+            return img
+    return payload.images[0]
 
 
 class JIPCNetPreprocess(io.ComfyNode):
@@ -22,16 +55,52 @@ class JIPCNetPreprocess(io.ComfyNode):
             node_id="JIPCNetPreprocess",
             display_name="JIP CNet Preprocess",
             category="JIP",
-            description="Run the selected controlnet preprocessors (via comfyui_controlnet_aux) on the working image.",
+            description="Run the selected controlnet preprocessors (via comfyui_controlnet_aux) and append their outputs to the payload.",
             inputs=[
-                io.Image.Input("image"),
-                *[io.Boolean.Input(name, default=default) for name, default in PREPROCESSORS],
+                JIPPayloadIO.Input("payload"),
+                *[io.Boolean.Input(label, default=default) for label, _node, default in PREPROCESSORS],
             ],
             outputs=[
-                io.Image.Output("image"),
+                JIPPayloadIO.Output("payload"),
             ],
         )
 
     @classmethod
-    def execute(cls, image: io.Image.Type, **toggles) -> io.NodeOutput:
-        raise NotImplementedError("JIP CNet Preprocess not yet implemented (#5)")
+    def execute(cls, payload, **toggles) -> io.NodeOutput:
+        if payload is None or not getattr(payload, "images", None):
+            raise ValueError("JIP CNet Preprocess: payload has no images (connect JIP Load).")
+
+        selected = [(label, node) for label, node, default in PREPROCESSORS if toggles.get(label, default)]
+        if not selected:
+            return io.NodeOutput(payload)
+
+        mappings = _load_cnet_mappings()
+        if mappings is None:
+            raise RuntimeError(
+                "comfyui_controlnet_aux not found. Install it into custom_nodes "
+                "(https://github.com/Fannovel16/comfyui_controlnet_aux) to use JIP CNet Preprocess."
+            )
+
+        src = _working_image(payload)
+        dims = getattr(payload, "dims", (0, 0)) or (0, 0)
+        resolution = max(dims) if max(dims) > 0 else 512
+
+        out = payload.copy()
+        for label, node_key in selected:
+            node_cls = mappings.get(node_key)
+            if node_cls is None:
+                print(f"[JIP] controlnet_aux missing preprocessor '{node_key}' — skipping {label}")
+                continue
+            fn = getattr(node_cls(), node_cls.FUNCTION)
+            try:
+                result = fn(image=src, resolution=resolution)
+            except Exception as exc:  # one bad preprocessor shouldn't sink the run
+                print(f"[JIP] preprocessor {label} failed: {exc}")
+                continue
+            image = result[0] if isinstance(result, (tuple, list)) else result
+            out.images.append(image)
+            out.names.append(f"_{label.lower()}")
+
+        previewable = [t for t in out.images if t.shape[1:] == out.images[0].shape[1:]]
+        preview = torch.cat(previewable, dim=0) if len(previewable) > 1 else out.images[0]
+        return io.NodeOutput(out, ui=ui.PreviewImage(preview, cls=cls))
