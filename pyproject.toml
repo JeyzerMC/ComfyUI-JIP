@@ -1,0 +1,22 @@
+[project]
+name = "comfyui-jip"
+description = "Image preprocessing pipeline for ComfyUI: load, background-removal, resize, and controlnet-preprocessor image generation as composable nodes."
+version = "0.0.1"
+license = { file = "LICENSE" }
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow",
+    "numpy",
+]
+
+[project.urls]
+Repository = "https://github.com/JeyzerMC/ComfyUI-JIP"
+
+[tool.comfy]
+PublisherId = "jeyzermc"
+DisplayName = "ComfyUI-JIP"
+Icon = ""
+# comfyui_controlnet_aux (Apache-2.0) is invoked at runtime by JIP CNet Preprocess
+# but is not bundled; declare it so the registry/manager can surface it.
+requires-comfyui = ">=0.12.0"
