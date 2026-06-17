@@ -1,45 +1,100 @@
 import { app } from "../../scripts/app.js";
 
-// JIP Load: show a live "<base>/<output_path>/<output_name>.png" readout that
-// updates as the output_name / output_path / base_dir widgets change (#2).
-// The bespoke Load-Image button, image preview, and Flake-style hover buttons
-// (remove / replace / edit) are layered on top of this in a follow-up.
+// ComfyUI-JIP frontend.
+//   JIPLoad: a live "<base>/<output_path>/<output_name>.png" readout (#2).
+//   JIPCNetPreprocess: a grid of toggleable controlnet boxes instead of a
+//     column of boolean checkboxes, and no on-node image preview (#16).
 app.registerExtension({
     name: "JeyzerMC.JIP",
     async beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData?.name !== "JIPLoad") return;
-
-        const onNodeCreated = nodeType.prototype.onNodeCreated;
-        nodeType.prototype.onNodeCreated = function () {
-            const r = onNodeCreated?.apply(this, arguments);
-
-            const get = (name) => this.widgets?.find((w) => w.name === name);
-            const baseLabel = () => {
-                const v = get("base_dir")?.value || "Comfy Install";
-                return v === "Extra Path" ? "Extra Path: [D:/]" : "Comfy Install: [C:/]";
-            };
-            const preview = this.addWidget("text", "→ output", "", () => {}, { serialize: false });
-            preview.disabled = true;
-
-            const refresh = () => {
-                const name = (get("output_name")?.value || "").trim();
-                const path = (get("output_path")?.value || "cnets/").trim().replace(/^\/+|\/+$/g, "");
-                preview.value = `${baseLabel()}/${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
-                app.graph?.setDirtyCanvas(true, false);
-            };
-
-            for (const n of ["output_name", "output_path", "base_dir"]) {
-                const w = get(n);
-                if (!w) continue;
-                const cb = w.callback;
-                w.callback = function () {
-                    const res = cb?.apply(this, arguments);
-                    refresh();
-                    return res;
-                };
-            }
-            refresh();
-            return r;
-        };
+        if (nodeData?.name === "JIPLoad") setupLoad(nodeType);
+        else if (nodeData?.name === "JIPCNetPreprocess") setupCNet(nodeType);
     },
 });
+
+function setupLoad(nodeType) {
+    const onNodeCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+        const r = onNodeCreated?.apply(this, arguments);
+
+        const get = (name) => this.widgets?.find((w) => w.name === name);
+        const baseLabel = () => {
+            const v = get("base_dir")?.value || "Comfy Install";
+            return v === "Extra Path" ? "Extra Path: [D:/]" : "Comfy Install: [C:/]";
+        };
+        const preview = this.addWidget("text", "→ output", "", () => {}, { serialize: false });
+        preview.disabled = true;
+
+        const refresh = () => {
+            const name = (get("output_name")?.value || "").trim();
+            const path = (get("output_path")?.value || "cnets/").trim().replace(/^\/+|\/+$/g, "");
+            preview.value = `${baseLabel()}/${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
+            app.graph?.setDirtyCanvas(true, false);
+        };
+
+        for (const n of ["output_name", "output_path", "base_dir"]) {
+            const w = get(n);
+            if (!w) continue;
+            const cb = w.callback;
+            w.callback = function () {
+                const res = cb?.apply(this, arguments);
+                refresh();
+                return res;
+            };
+        }
+        refresh();
+        return r;
+    };
+}
+
+// The controlnet preprocessor labels, mirroring PREPROCESSORS in jip/nodes/cnet.py.
+const CNET_LABELS = [
+    "DepthAnythingV2", "DWPose", "HED", "DensePose",
+    "CannyEdge", "LineArt", "Manga2Anime", "OpenPose",
+];
+
+function setupCNet(nodeType) {
+    const onNodeCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+        const r = onNodeCreated?.apply(this, arguments);
+        makeToggleGrid(this, CNET_LABELS, "cnet_grid");
+        return r;
+    };
+}
+
+// Hide the named boolean widgets and drive them from a grid of toggleable
+// name boxes (#16). Each box reflects and flips its widget's value on click.
+function makeToggleGrid(node, labels, widgetId) {
+    const container = document.createElement("div");
+    container.style.cssText = "display:grid;grid-template-columns:repeat(2, 1fr);gap:4px;padding:4px 6px;box-sizing:border-box;";
+
+    let count = 0;
+    for (const label of labels) {
+        const w = node.widgets?.find((x) => x.name === label);
+        if (!w) continue;
+        count++;
+
+        // Collapse the native boolean widget; the box below drives it.
+        w.computeSize = () => [0, -4];
+        w.type = "hidden";
+        w.hidden = true;
+
+        const box = document.createElement("div");
+        const render = () => {
+            const on = !!w.value;
+            box.style.cssText = `box-sizing:border-box;min-height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;user-select:none;text-align:center;padding:4px;line-height:1.15;word-break:break-word;border:1px solid ${on ? "#4a9eff" : "#444"};background:${on ? "rgba(74,158,255,0.18)" : "#2a2a2a"};color:${on ? "#cfe6ff" : "#9a9a9a"};`;
+            box.textContent = label;
+        };
+        box.addEventListener("click", () => {
+            w.value = !w.value;
+            if (typeof w.callback === "function") w.callback(w.value);
+            render();
+            app.graph?.setDirtyCanvas(true, false);
+        });
+        render();
+        container.appendChild(box);
+    }
+
+    const widget = node.addDOMWidget(widgetId, "div", container, { serialize: false, margin: 4 });
+    widget.computeSize = () => [node.size[0], Math.ceil(count / 2) * 32 + 12];
+}

@@ -11,7 +11,7 @@ import importlib
 
 import torch
 
-from comfy_api.v0_0_2 import io, ui
+from comfy_api.v0_0_2 import io
 
 from ..payload import JIPPayloadIO
 
@@ -121,6 +121,8 @@ class JIPCNetPreprocess(io.ComfyNode):
             out.images.append(image)
             out.names.append(f"_{label.lower()}")
 
-        previewable = [t for t in out.images if isinstance(t, torch.Tensor) and t.shape[1:] == out.images[0].shape[1:]]
-        preview = torch.cat(previewable, dim=0) if len(previewable) > 1 else out.images[0]
-        return io.NodeOutput(out, ui=ui.PreviewImage(preview, cls=cls))
+        # No on-node preview (#16) — outputs flow through the payload to JIP Save.
+        # Log what was appended so e.g. HED/LineArt producing output is visible (#14).
+        appended = out.names[len(payload.names):]
+        print(f"[JIP] CNet appended {len(appended)} output(s): {appended}")
+        return io.NodeOutput(out)
