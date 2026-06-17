@@ -18,9 +18,15 @@ function setupLoad(nodeType) {
         const r = onNodeCreated?.apply(this, arguments);
 
         const get = (name) => this.widgets?.find((w) => w.name === name);
+
+        // Real resolved roots, fetched from the backend (#9). Until they arrive,
+        // fall back to the label name alone.
+        let roots = { comfy_install: "", extra_path: null };
+        const fwd = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "");
         const baseLabel = () => {
             const v = get("base_dir")?.value || "Comfy Install";
-            return v === "Extra Path" ? "Extra Path: [D:/]" : "Comfy Install: [C:/]";
+            if (v === "Extra Path") return `Extra Path: ${fwd(roots.extra_path) || "(none)"}`;
+            return `Comfy Install: ${fwd(roots.comfy_install)}`;
         };
 
         // Plain grey label showing the full output path, no field-name (#10).
@@ -48,6 +54,21 @@ function setupLoad(nodeType) {
                 return res;
             };
         }
+
+        // Pull the real base paths; drop the Extra Path option when unconfigured (#9).
+        fetch("/jip/roots", { cache: "no-store" })
+            .then((r) => r.json())
+            .then((d) => {
+                roots = d || roots;
+                const bw = get("base_dir");
+                if (bw && !roots.extra_path) {
+                    if (bw.options && Array.isArray(bw.options.values)) bw.options.values = ["Comfy Install"];
+                    if (bw.value === "Extra Path") bw.value = "Comfy Install";
+                }
+                refresh();
+            })
+            .catch(() => {});
+
         refresh();
         return r;
     };
