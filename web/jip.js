@@ -22,13 +22,19 @@ function setupLoad(nodeType) {
             const v = get("base_dir")?.value || "Comfy Install";
             return v === "Extra Path" ? "Extra Path: [D:/]" : "Comfy Install: [C:/]";
         };
-        const preview = this.addWidget("text", "→ output", "", () => {}, { serialize: false });
-        preview.disabled = true;
+
+        // Plain grey label showing the full output path, no field-name (#10).
+        const labelEl = document.createElement("div");
+        labelEl.style.cssText = "padding:3px 8px;font-size:10px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;";
+        const labelWidget = this.addDOMWidget("output_path_label", "div", labelEl, { serialize: false });
+        labelWidget.computeSize = () => [this.size[0], 18];
 
         const refresh = () => {
             const name = (get("output_name")?.value || "").trim();
             const path = (get("output_path")?.value || "cnets/").trim().replace(/^\/+|\/+$/g, "");
-            preview.value = `${baseLabel()}/${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
+            const full = `${baseLabel()}/${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
+            labelEl.textContent = full;
+            labelEl.title = full;
             app.graph?.setDirtyCanvas(true, false);
         };
 
