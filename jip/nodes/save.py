@@ -39,14 +39,20 @@ class JIPSave(io.ComfyNode):
 
         names = getattr(payload, "names", []) or []
         last_dir = None
+        saved = 0
         for i, tensor in enumerate(images):
             suffix = names[i] if i < len(names) else ""
             dest = build_output_path(payload.base_root, payload.output_path, payload.output_name, suffix or "")
             last_dir = os.path.dirname(dest)
-            os.makedirs(last_dir, exist_ok=True)
-            arr = (tensor[0].detach().clamp(0, 1).cpu().numpy() * 255.0).round().astype(np.uint8)
-            Image.fromarray(arr).save(dest)
-        print(f"[JIP] saved {len(images)} image(s) under {last_dir}")
+            try:
+                os.makedirs(last_dir, exist_ok=True)
+                arr = (tensor[0].detach().clamp(0, 1).cpu().numpy() * 255.0).round().astype(np.uint8)
+                Image.fromarray(arr).save(dest)
+                saved += 1
+            except Exception as exc:  # surface a bad write instead of silently skipping (#17)
+                print(f"[JIP] failed to save {dest}: {exc}")
+        # Log the absolute directory so the files are easy to locate (#17).
+        print(f"[JIP] saved {saved}/{len(images)} image(s) under {os.path.abspath(last_dir) if last_dir else '<none>'}")
 
         # Output grid: batch the images that share the first image's H/W.
         first = images[0]
