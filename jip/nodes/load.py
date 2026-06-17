@@ -46,7 +46,8 @@ class JIPLoad(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Image.Output("image"),
+                # The image travels inside the payload, so no separate image pin
+                # is needed — downstream JIP nodes read it from there (#8).
                 JIPPayloadIO.Output("payload"),
             ],
         )
@@ -81,4 +82,4 @@ class JIPLoad(io.ComfyNode):
             output_path=(output_path or "input/cnets/").strip(),
             output_name=output_name.strip(),
         )
-        return io.NodeOutput(tensor, payload, ui=ui.PreviewImage(tensor, cls=cls))
+        return io.NodeOutput(payload, ui=ui.PreviewImage(tensor, cls=cls))
