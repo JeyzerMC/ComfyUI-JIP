@@ -40,6 +40,23 @@ def _load_cnet_mappings():
     return None
 
 
+def _unwrap_image(result):
+    """Pull the IMAGE tensor out of a preprocessor's return value.
+
+    comfyui_controlnet_aux preprocessors are ComfyUI nodes: most return a plain
+    ``(tensor,)`` tuple, but the pose ones (DWPose, OpenPose) return a UI-wrapped
+    ``{"result": (tensor, ...), "ui": {...}}`` dict so they can emit pose JSON.
+    The old code passed that dict straight through, so a later ``.shape`` access
+    raised ``'dict' object has no attribute 'shape'`` (#5/#6). Unwrap both shapes
+    and return the tensor (or None when there isn't one).
+    """
+    if isinstance(result, dict):
+        result = result.get("result", result.get("images"))
+    if isinstance(result, (tuple, list)):
+        result = result[0] if result else None
+    return result
+
+
 def _working_image(payload):
     """The image preprocessors run on: the edited '_alt' entry if present, else base."""
     for img, nm in zip(payload.images, getattr(payload, "names", [])):
@@ -97,10 +114,13 @@ class JIPCNetPreprocess(io.ComfyNode):
             except Exception as exc:  # one bad preprocessor shouldn't sink the run
                 print(f"[JIP] preprocessor {label} failed: {exc}")
                 continue
-            image = result[0] if isinstance(result, (tuple, list)) else result
+            image = _unwrap_image(result)
+            if not isinstance(image, torch.Tensor):
+                print(f"[JIP] preprocessor {label} returned no image tensor — skipping")
+                continue
             out.images.append(image)
             out.names.append(f"_{label.lower()}")
 
-        previewable = [t for t in out.images if t.shape[1:] == out.images[0].shape[1:]]
+        previewable = [t for t in out.images if isinstance(t, torch.Tensor) and t.shape[1:] == out.images[0].shape[1:]]
         preview = torch.cat(previewable, dim=0) if len(previewable) > 1 else out.images[0]
         return io.NodeOutput(out, ui=ui.PreviewImage(preview, cls=cls))
