@@ -160,4 +160,17 @@ function makeToggleGrid(node, labels, widgetId) {
 
     const widget = node.addDOMWidget(widgetId, "div", container, { serialize: false, margin: 4 });
     widget.computeSize = () => [node.size[0], Math.ceil(count / 2) * 32 + 12];
+
+    // Render the grid directly under the payload pin: move it ahead of the now
+    // hidden boolean widgets so no empty band is left between them (#21).
+    const i = node.widgets.indexOf(widget);
+    if (i > 0) {
+        node.widgets.splice(i, 1);
+        node.widgets.unshift(widget);
+    }
+    // Tighten the node to its content so there is no trailing gap either.
+    requestAnimationFrame(() => {
+        node.setSize([node.size[0], node.computeSize()[1]]);
+        app.graph?.setDirtyCanvas(true, true);
+    });
 }
