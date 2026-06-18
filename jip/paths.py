@@ -16,11 +16,15 @@ Final files land at:  <chosen base root>/<output_path>/<output_name><suffix>.png
 from __future__ import annotations
 
 import os
+import re
 
 import folder_paths
 
 # Category key registered in jip/__init__.py.
 FOLDER_KEY = "jip"
+
+# Matches a JIP role file: <stem>_<role>_<NNN>.png (#17).
+_ROLE_RE = r"_(?:0_cover|1_base|2_prep|3_\w+)_(\d{3})\.png$"
 
 
 def comfy_root() -> str:
@@ -93,3 +97,36 @@ def build_output_path(base_dir: str, output_path: str, output_name: str, suffix:
     rel_path = (output_path or "").strip().strip("/\\")
     full = os.path.join(resolve_base(base_dir), rel_path, f"{rel}{suffix}.png")
     return os.path.normpath(full)
+
+
+def output_dir_and_stem(base_dir: str, output_path: str, output_name: str) -> tuple[str, str]:
+    """Resolve the directory that holds a save and the file stem.
+
+    ``output_name`` may contain subfolders (e.g. ``jjba/josuke``): the subfolder
+    part joins the directory, the last segment is the stem.
+    """
+    rel = output_name.strip().lstrip("/\\")
+    rel_path = (output_path or "").strip().strip("/\\")
+    name_dir, stem = os.path.split(rel)
+    directory = os.path.normpath(os.path.join(resolve_base(base_dir), rel_path, name_dir))
+    return directory, stem
+
+
+def next_increment(directory: str, stem: str) -> int:
+    """Lowest free 3-digit increment for ``<stem>_<role>_<NNN>.png`` in directory.
+
+    Returns ``max(existing) + 1`` (or 0 when none exist) so an identical re-save
+    of the same name advances to the next slot (#17).
+    """
+    if not os.path.isdir(directory):
+        return 0
+    pat = re.compile(re.escape(stem) + _ROLE_RE)
+    highest = -1
+    try:
+        for f in os.listdir(directory):
+            m = pat.match(f)
+            if m:
+                highest = max(highest, int(m.group(1)))
+    except OSError:
+        return 0
+    return highest + 1

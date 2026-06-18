@@ -56,11 +56,12 @@ class JIPResize(io.ComfyNode):
 
     @classmethod
     def execute(cls, payload, width: int, height: int, mode: str) -> io.NodeOutput:
-        images = getattr(payload, "images", None) or []
-        if not images:
+        if payload is None or not getattr(payload, "images", None):
             raise ValueError("JIP Resize: payload has no images (connect JIP Load).")
         out = payload.copy()
-        out.images = [_resize_one(t, width, height, mode) for t in images]
+        # Resize the working image into _alt — never overwrite the original base,
+        # so JIP Save still writes the true original as the base image (#17).
+        resized = _resize_one(out.working_image(), width, height, mode)
+        out.set_working(resized)
         out.dims = (width, height)
-        preview = out.images[0] if len(out.images) == 1 else torch.cat(out.images, dim=0)
-        return io.NodeOutput(out, ui=ui.PreviewImage(preview, cls=cls))
+        return io.NodeOutput(out, ui=ui.PreviewImage(resized, cls=cls))

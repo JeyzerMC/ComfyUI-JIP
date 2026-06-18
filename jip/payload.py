@@ -37,6 +37,39 @@ class JIPPayload:
             output_name=self.output_name,
         )
 
+    # -- role accessors (#17) -------------------------------------------------
+    # name "" = the immutable original base (from JIP Load, never mutated);
+    # "_alt" = the working / "filtered" image (after Resize and/or RMBG);
+    # "_<preproc>" = one per CNet preprocessor output.
+
+    def base_image(self):
+        """The original base image, or None if the payload is empty."""
+        return self.images[0] if self.images else None
+
+    def working_image(self):
+        """The filtered working image: the ``_alt`` entry if present, else base.
+
+        Returns base when no edit has happened — so "prep" is always defined.
+        """
+        for img, nm in zip(self.images, self.names):
+            if nm == "_alt":
+                return img
+        return self.base_image()
+
+    def set_working(self, tensor) -> None:
+        """Write the working image to ``_alt`` (create it; never overwrite base)."""
+        for i, nm in enumerate(self.names):
+            if nm == "_alt":
+                self.images[i] = tensor
+                return
+        self.images.append(tensor)
+        self.names.append("_alt")
+
+    def preprocessor_outputs(self) -> list[tuple[str, "object"]]:
+        """``[(preproc_name, tensor)]`` for each ``_<preproc>`` entry (name without _)."""
+        return [(nm[1:], img) for img, nm in zip(self.images, self.names)
+                if nm and nm not in ("", "_alt")]
+
 
 # Custom IO type that carries a JIPPayload between JIP nodes.
 JIPPayloadIO = io.Custom("JIP_PAYLOAD")
