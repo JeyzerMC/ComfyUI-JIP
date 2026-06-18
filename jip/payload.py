@@ -22,8 +22,8 @@ class JIPPayload:
     names: list[str] = field(default_factory=list)
     # Current working dimensions (width, height).
     dims: tuple[int, int] = (0, 0)
-    # Destination base: "comfy_install" or "extra_path".
-    base_root: str = "comfy_install"
+    # Destination base root label, e.g. "Comfy Install" or "Extra Path 1" (#19).
+    base_root: str = "Comfy Install"
     output_path: str = "cnets/"
     output_name: str = ""
 

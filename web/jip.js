@@ -19,14 +19,15 @@ function setupLoad(nodeType) {
 
         const get = (name) => this.widgets?.find((w) => w.name === name);
 
-        // Real resolved roots, fetched from the backend (#9). Until they arrive,
-        // fall back to the label name alone.
-        let roots = { comfy_install: "", extra_path: null };
+        // Real resolved base roots, fetched from the backend (#9, #19). Each is
+        // { index, label, path }. Until they arrive, fall back to the label name.
+        let roots = [];
         const fwd = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "");
+        const rootByLabel = (label) => roots.find((r) => r.label === label);
         const baseLabel = () => {
             const v = get("base_dir")?.value || "Comfy Install";
-            if (v === "Extra Path") return `Extra Path: ${fwd(roots.extra_path) || "(none)"}`;
-            return `Comfy Install: ${fwd(roots.comfy_install)}`;
+            const r = rootByLabel(v);
+            return `${v}: ${r ? fwd(r.path) : "(unknown)"}`;
         };
 
         // Plain grey label showing the full output path, no field-name (#10).
@@ -55,15 +56,17 @@ function setupLoad(nodeType) {
             };
         }
 
-        // Pull the real base paths; drop the Extra Path option when unconfigured (#9).
+        // Pull the real base roots and rebuild the base_dir options from them so
+        // any configured Extra Path appears, and only configured ones do (#9, #19).
         fetch("/jip/roots", { cache: "no-store" })
             .then((r) => r.json())
             .then((d) => {
-                roots = d || roots;
+                roots = (d && d.roots) || [];
+                const labels = roots.map((r) => r.label);
                 const bw = get("base_dir");
-                if (bw && !roots.extra_path) {
-                    if (bw.options && Array.isArray(bw.options.values)) bw.options.values = ["Comfy Install"];
-                    if (bw.value === "Extra Path") bw.value = "Comfy Install";
+                if (bw && labels.length) {
+                    if (bw.options && Array.isArray(bw.options.values)) bw.options.values = labels;
+                    if (!labels.includes(bw.value)) bw.value = labels[0];
                 }
                 refresh();
             })

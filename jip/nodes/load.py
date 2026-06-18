@@ -13,9 +13,7 @@ import node_helpers
 from comfy_api.v0_0_2 import io, ui
 
 from ..payload import JIPPayload, JIPPayloadIO
-
-BASE_DIR_OPTIONS = ["Comfy Install", "Extra Path"]
-_BASE_ROOT_BY_LABEL = {"Comfy Install": "comfy_install", "Extra Path": "extra_path"}
+from ..paths import root_labels
 
 
 class JIPLoad(io.ComfyNode):
@@ -41,8 +39,8 @@ class JIPLoad(io.ComfyNode):
                 io.String.Input("output_path", default="input/cnets/"),
                 io.Combo.Input(
                     "base_dir",
-                    options=BASE_DIR_OPTIONS,
-                    tooltip="Destination root used by JIP Save: Comfy install or an extra model path.",
+                    options=root_labels(),
+                    tooltip="Destination root used by JIP Save: the Comfy install or an extra path (jip: entry in extra_model_paths.yaml).",
                 ),
             ],
             outputs=[
@@ -78,7 +76,7 @@ class JIPLoad(io.ComfyNode):
             images=[tensor],
             names=[""],
             dims=(width, height),
-            base_root=_BASE_ROOT_BY_LABEL.get(base_dir, "comfy_install"),
+            base_root=base_dir,
             output_path=(output_path or "input/cnets/").strip(),
             output_name=output_name.strip(),
         )

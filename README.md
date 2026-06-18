@@ -24,9 +24,21 @@ you don't need background removal, etc.
 | **JIP Save** | Write every payload image to `<base>/<output_path>/<output_name><suffix>.png` and show the output grid. |
 
 ### Base directory resolution
-- **Comfy Install** → the ComfyUI install root.
-- **Extra Path** → the first `base_path:` declared in `extra_model_paths.yaml`
-  (falls back to the ComfyUI root when none is configured).
+JIP registers a `jip` folder category, so its base roots are enumerated the same
+way comfyui-flakes enumerates its roots:
+
+- **Comfy Install** → the ComfyUI install root (always available).
+- **Extra Path N** → any extra root contributed by a `jip:` key in
+  `extra_model_paths.yaml`. ComfyUI joins that key onto the block's `base_path`:
+
+  ```yaml
+  my_extra:
+    base_path: D:/AI
+    jip: cnets        # -> base root "Extra Path 1" = D:/AI/cnets
+  ```
+
+  Without a `jip:` entry only **Comfy Install** is offered (same requirement as
+  flakes' `flakes:`/`model_presets:` keys).
 
 ## Worked example
 
