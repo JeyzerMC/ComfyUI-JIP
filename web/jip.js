@@ -9,6 +9,7 @@ app.registerExtension({
     async beforeRegisterNodeDef(nodeType, nodeData) {
         if (nodeData?.name === "JIPLoad") setupLoad(nodeType);
         else if (nodeData?.name === "JIPCNetPreprocess") setupCNet(nodeType);
+        else if (nodeData?.name === "JIPSave") setupSave(nodeType);
     },
 });
 
@@ -78,6 +79,75 @@ function setupLoad(nodeType) {
         refresh();
         return r;
     };
+}
+
+// JIPSave: a labelled output grid. Each cell shows the saved image, its filename
+// (full absolute path on hover) and dimensions, with the batch directory below —
+// mirroring comfyui-flakes' Flake Generate presentation (#18).
+function setupSave(nodeType) {
+    const onExecuted = nodeType.prototype.onExecuted;
+    nodeType.prototype.onExecuted = function (message) {
+        onExecuted?.apply(this, arguments);
+        renderSaveGrid(this, message);
+    };
+}
+
+function renderSaveGrid(node, message) {
+    const images = message?.jip_images || [];
+    const meta = message?.jip_meta || [];
+    const dir = (message?.jip_dir && message.jip_dir[0]) || "";
+
+    // One reused DOM widget for the grid.
+    if (!node._jipSaveEl) {
+        const root = document.createElement("div");
+        root.style.cssText = "width:100%;box-sizing:border-box;padding:4px 6px;";
+        const widget = node.addDOMWidget("jip_save_grid", "div", root, { serialize: false, margin: 4 });
+        widget.computeSize = () => [node.size[0], node._jipSaveH || 60];
+        node._jipSaveEl = root;
+    }
+    const root = node._jipSaveEl;
+    root.replaceChildren();
+
+    const grid = document.createElement("div");
+    grid.style.cssText = "display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;";
+    for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const m = meta[i] || {};
+        const cell = document.createElement("div");
+        cell.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;";
+
+        const el = document.createElement("img");
+        el.src = `/view?filename=${encodeURIComponent(img.filename)}&type=${img.type || "temp"}&subfolder=${encodeURIComponent(img.subfolder || "")}`;
+        el.style.cssText = "width:100%;height:110px;object-fit:contain;background:#1a1a1a;border-radius:3px;";
+        cell.appendChild(el);
+
+        const name = document.createElement("div");
+        name.textContent = m.filename || img.filename;
+        name.title = m.path || "";  // full absolute path on hover
+        name.style.cssText = "width:100%;text-align:center;color:#ccc;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;";
+        cell.appendChild(name);
+
+        const dims = document.createElement("div");
+        dims.textContent = (m.width && m.height) ? `${m.width} × ${m.height}` : "";
+        dims.style.cssText = "color:#888;font-size:10px;";
+        cell.appendChild(dims);
+
+        grid.appendChild(cell);
+    }
+    root.appendChild(grid);
+
+    const dirLabel = document.createElement("div");
+    dirLabel.textContent = dir;
+    dirLabel.title = dir;
+    dirLabel.style.cssText = "margin-top:6px;color:#888;font-size:10px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;";
+    root.appendChild(dirLabel);
+
+    const rows = Math.ceil(images.length / 2);
+    node._jipSaveH = rows * 140 + 30;
+    requestAnimationFrame(() => {
+        node.setSize([node.size[0], node.computeSize()[1]]);
+        app.graph?.setDirtyCanvas(true, true);
+    });
 }
 
 // The controlnet preprocessor labels, mirroring PREPROCESSORS in jip/nodes/cnet.py.

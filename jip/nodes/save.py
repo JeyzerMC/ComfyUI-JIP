@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import numpy as np
-import torch
 from PIL import Image
 
-from comfy_api.v0_0_2 import io, ui
+import folder_paths
+from comfy_api.v0_0_2 import io
 
 from ..payload import JIPPayloadIO
 from ..paths import output_dir_and_stem, next_increment
@@ -65,13 +66,13 @@ class JIPSave(io.ComfyNode):
 
         os.makedirs(directory, exist_ok=True)
         roles = _plan_roles(payload)
-        written: list["torch.Tensor"] = []
+        written: list[tuple[str, "torch.Tensor"]] = []  # (dest, tensor)
         saved = 0
         for role_suffix, tensor in roles:
             dest = os.path.join(directory, f"{stem}{role_suffix}_{nnn}.png")
             try:
                 _to_pil(tensor).save(dest)
-                written.append(tensor)
+                written.append((dest, tensor))
                 saved += 1
             except Exception as exc:  # surface a bad write instead of silently skipping (#17)
                 print(f"[JIP] failed to save {dest}: {exc}")
@@ -88,10 +89,37 @@ class JIPSave(io.ComfyNode):
                 except Exception as exc:
                     print(f"[JIP] consume failed to delete {src}: {exc}")
 
-        # Output grid: batch the written images that share the first one's H/W.
         if not written:
             return io.NodeOutput()
-        first = written[0]
-        batch = [t for t in written if t.shape[1:] == first.shape[1:]]
-        preview = torch.cat(batch, dim=0) if len(batch) > 1 else first
-        return io.NodeOutput(ui=ui.PreviewImage(preview, cls=cls))
+
+        # Labelled grid: serve a temp copy of each written image for display, and
+        # ship the real dest filename / path / dims alongside so the frontend can
+        # label each cell (filename + full path on hover + dims) and show the
+        # batch directory below — like Flake Generate (#18). Custom keys avoid the
+        # default image-preview handler. execution.py flattens each ui value, so
+        # every value must be a list.
+        temp_dir = folder_paths.get_temp_directory()
+        os.makedirs(temp_dir, exist_ok=True)
+        images_ui: list[dict] = []
+        meta: list[dict] = []
+        for dest, tensor in written:
+            pil = _to_pil(tensor)
+            tmp = f"jip_{uuid.uuid4().hex[:12]}.png"
+            try:
+                pil.save(os.path.join(temp_dir, tmp))
+            except Exception as exc:
+                print(f"[JIP] failed to write preview for {dest}: {exc}")
+                continue
+            images_ui.append({"filename": tmp, "subfolder": "", "type": "temp"})
+            meta.append({
+                "filename": os.path.basename(dest),
+                "path": os.path.abspath(dest),
+                "width": pil.width,
+                "height": pil.height,
+            })
+
+        return io.NodeOutput(ui={
+            "jip_images": images_ui,
+            "jip_meta": meta,
+            "jip_dir": [os.path.abspath(directory)],
+        })
