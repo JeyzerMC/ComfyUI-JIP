@@ -40,6 +40,37 @@ def _load_cnet_mappings():
     return None
 
 
+def _call_kwargs(node_cls, image, resolution: int) -> dict:
+    """Build the kwargs for a preprocessor call from its INPUT_TYPES defaults.
+
+    controlnet_aux preprocessors declare extra options (HED's ``safe``,
+    LineArt's ``coarse``, …) and read them with bare ``kwargs["safe"]`` — no
+    default — so calling with only ``image``/``resolution`` raised ``KeyError``,
+    which our try/except swallowed and surfaced as "no output" (#14). Supply a
+    default for every declared input so any preprocessor is callable, then set
+    the image and our computed resolution.
+    """
+    kwargs: dict = {}
+    try:
+        spec = node_cls.INPUT_TYPES()
+    except Exception:
+        spec = {}
+    for group in ("required", "optional"):
+        for name, decl in (spec.get(group) or {}).items():
+            if name == "image" or not isinstance(decl, (tuple, list)) or not decl:
+                continue
+            type_def = decl[0]
+            opts = decl[1] if len(decl) > 1 and isinstance(decl[1], dict) else {}
+            if isinstance(type_def, (list, tuple)):
+                # COMBO: a list of option values — default to the declared one or the first.
+                kwargs[name] = opts.get("default", type_def[0] if type_def else None)
+            elif "default" in opts:
+                kwargs[name] = opts["default"]
+    kwargs["image"] = image
+    kwargs["resolution"] = resolution
+    return kwargs
+
+
 def _unwrap_image(result):
     """Pull the IMAGE tensor out of a preprocessor's return value.
 
@@ -110,9 +141,9 @@ class JIPCNetPreprocess(io.ComfyNode):
                 continue
             fn = getattr(node_cls(), node_cls.FUNCTION)
             try:
-                result = fn(image=src, resolution=resolution)
+                result = fn(**_call_kwargs(node_cls, src, resolution))
             except Exception as exc:  # one bad preprocessor shouldn't sink the run
-                print(f"[JIP] preprocessor {label} failed: {exc}")
+                print(f"[JIP] preprocessor {label} ({node_key}) failed: {exc!r}")
                 continue
             image = _unwrap_image(result)
             if not isinstance(image, torch.Tensor):
