@@ -1,9 +1,11 @@
-"""JIP RMBG node — background removal via rembg (#6).
+"""JIP RMBG node — multi-model background removal + pause-and-select overlay (#6, #11).
 
 Uses `rembg` (MIT) with the U²-Net family of models (Apache-2.0 weights) — a
-permissive stack, deliberately NOT the GPL `comfyui-rmbg`. The bg-removed result
-is composited onto a chosen background colour and stored as the payload's "_alt"
-image. The 4-option grid + manual eraser overlay is deferred frontend polish.
+permissive stack, deliberately NOT the GPL `comfyui-rmbg`. Every selected model
+is run; execution then pauses and the frontend shows all results so the user
+picks one and optionally retouches it (eraser / magic-fill to the background
+colour) before confirming. The confirmed image becomes the payload's `_alt`
+(working/"filtered") image. No image is shown on the node.
 """
 
 from __future__ import annotations
@@ -12,9 +14,10 @@ import numpy as np
 import torch
 from PIL import Image
 
-from comfy_api.v0_0_2 import io, ui
+from comfy_api.v0_0_2 import io
 
 from ..payload import JIPPayloadIO
+from .. import interactive
 
 MODELS = ["u2net", "u2netp", "isnet-general-use", "silueta"]
 BACKGROUNDS = {"white": (255, 255, 255), "black": (0, 0, 0), "gray": (128, 128, 128)}
@@ -29,15 +32,6 @@ def _session(model_name: str):
     return _SESSIONS[model_name]
 
 
-def _working_index(payload) -> int:
-    """Index of the image to operate on: existing '_alt' if present, else base (0)."""
-    names = getattr(payload, "names", [])
-    for i, nm in enumerate(names):
-        if nm == "_alt":
-            return i
-    return 0
-
-
 class JIPRMBG(io.ComfyNode):
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -45,10 +39,11 @@ class JIPRMBG(io.ComfyNode):
             node_id="JIPRMBG",
             display_name="JIP RMBG",
             category="JIP",
-            description="Remove the background (rembg / U²-Net) and store the result as the payload's _alt image.",
+            description="Run the selected background-removal models, then pause and let you pick + retouch one result.",
             inputs=[
                 JIPPayloadIO.Input("payload"),
-                io.Combo.Input("model", options=MODELS),
+                # Multi-select model grid (rendered as toggle boxes on the frontend).
+                *[io.Boolean.Input(m, default=(m == "u2net")) for m in MODELS],
                 io.Combo.Input("background", options=list(BACKGROUNDS.keys())),
             ],
             outputs=[
@@ -57,7 +52,7 @@ class JIPRMBG(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, payload, model: str, background: str) -> io.NodeOutput:
+    def execute(cls, payload, background: str, **toggles) -> io.NodeOutput:
         if payload is None or not getattr(payload, "images", None):
             raise ValueError("JIP RMBG: payload has no images (connect JIP Load).")
 
@@ -68,18 +63,39 @@ class JIPRMBG(io.ComfyNode):
                 "rembg not installed. `pip install rembg` (MIT; U²-Net weights are Apache-2.0) to use JIP RMBG."
             ) from exc
 
-        src = payload.images[0]
+        selected = [m for m in MODELS if toggles.get(m, False)] or ["u2net"]
+        bg_rgb = BACKGROUNDS.get(background, (255, 255, 255))
+
+        src = payload.working_image()
         arr = (src[0].detach().clamp(0, 1).cpu().numpy() * 255.0).round().astype(np.uint8)
-        cut = remove(Image.fromarray(arr), session=_session(model))  # RGBA
-        bg = Image.new("RGBA", cut.size, BACKGROUNDS.get(background, (255, 255, 255)) + (255,))
-        composited = Image.alpha_composite(bg, cut.convert("RGBA")).convert("RGB")
-        alt = torch.from_numpy(np.array(composited).astype(np.float32) / 255.0)[None,]
+        src_pil = Image.fromarray(arr)
+
+        results: list[torch.Tensor] = []
+        labels: list[str] = []
+        for model in selected:
+            try:
+                cut = remove(src_pil, session=_session(model))  # RGBA
+                bg = Image.new("RGBA", cut.size, bg_rgb + (255,))
+                composited = Image.alpha_composite(bg, cut.convert("RGBA")).convert("RGB")
+                tensor = torch.from_numpy(np.array(composited).astype(np.float32) / 255.0)[None,]
+                results.append(tensor)
+                labels.append(model)
+            except Exception as exc:  # one bad model shouldn't sink the run
+                print(f"[JIP] RMBG model {model} failed: {exc!r}")
+
+        if not results:
+            raise RuntimeError("JIP RMBG: every selected model failed — see log.")
+
+        # Pause: let the user pick one result and retouch it. The overlay returns
+        # the final image (base64 PNG), which becomes the working/_alt image.
+        result = interactive.request(
+            "rmbg",
+            results,
+            extra={"labels": labels, "background": background, "bg_color": list(bg_rgb)},
+        )
+        edited = result.get("image")
+        alt = interactive.decode_image(edited) if edited else results[int(result.get("picked", 0))]
 
         out = payload.copy()
-        idx = _working_index(out)
-        if out.names[idx] == "_alt":
-            out.images[idx] = alt
-        else:
-            out.images.append(alt)
-            out.names.append("_alt")
-        return io.NodeOutput(out, ui=ui.PreviewImage(alt, cls=cls))
+        out.set_working(alt)
+        return io.NodeOutput(out)

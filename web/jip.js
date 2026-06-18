@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { initInteractive } from "./jip-overlay.js";
+import "./jip-rmbg.js";     // registers the "rmbg" overlay handler (#11)
 
 // Subscribe to the backend pause/resume handshake once at load (#22).
 initInteractive();
@@ -14,8 +15,20 @@ app.registerExtension({
         if (nodeData?.name === "JIPLoad") setupLoad(nodeType);
         else if (nodeData?.name === "JIPCNetPreprocess") setupCNet(nodeType);
         else if (nodeData?.name === "JIPSave") setupSave(nodeType);
+        else if (nodeData?.name === "JIPRMBG") setupRMBG(nodeType);
     },
 });
+
+// JIP RMBG: model selection as a toggle grid (multi-select); no on-node image (#11).
+const RMBG_MODELS = ["u2net", "u2netp", "isnet-general-use", "silueta"];
+function setupRMBG(nodeType) {
+    const onNodeCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+        const r = onNodeCreated?.apply(this, arguments);
+        makeToggleGrid(this, RMBG_MODELS, "rmbg_models");
+        return r;
+    };
+}
 
 function setupLoad(nodeType) {
     const onNodeCreated = nodeType.prototype.onNodeCreated;
