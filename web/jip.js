@@ -1,4 +1,8 @@
 import { app } from "../../scripts/app.js";
+import { initInteractive } from "./jip-overlay.js";
+
+// Subscribe to the backend pause/resume handshake once at load (#22).
+initInteractive();
 
 // ComfyUI-JIP frontend.
 //   JIPLoad: a live "<base>/<output_path>/<output_name>.png" readout (#2).
