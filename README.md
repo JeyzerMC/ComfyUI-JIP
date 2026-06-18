@@ -17,11 +17,11 @@ you don't need background removal, etc.
 
 | Node | Purpose |
 |---|---|
-| **JIP Load** | Select a source image; set `output_name`, `output_path` (default `input/cnets/`), and base directory (Comfy Install / Extra Path). Emits `IMAGE` + payload. |
-| **JIP RMBG** | Remove the background via `rembg` (U²-Net); composite onto white/black/gray; stored as the payload's `_alt` image. |
-| **JIP Resize** | Resize/crop every working image to exact target dims — `cover` (scale shortest edge + center-crop) or `stretch`. |
+| **JIP Load** | Select a source image; set `output_name`, `output_path` (default `input/cnets/`), and base directory. `Consume` moves the source (deleted after a successful save) instead of copying. Emits the payload. |
+| **JIP RMBG** | Multi-select background-removal models (`rembg` / U²-Net). Runs every selected model, **pauses**, and an overlay lets you pick one result and retouch it (eraser + magic-fill to the background colour). The confirmed image becomes the working/`_alt` image. |
+| **JIP Resize** | Carries only Portrait/Landscape default dims. On run it **pauses** and a crop/resize overlay draws an outline at the default dims for the image's orientation, offering fit-to-outline, crop-to-outline (aspect-locked drag), and stretch. |
 | **JIP CNet Preprocess** | Run selected controlnet preprocessors (DepthAnythingV2, DWPose, HED, DensePose, CannyEdge, LineArt; Manga2Anime/OpenPose off by default) via `comfyui_controlnet_aux`; appends one suffixed image each. |
-| **JIP Save** | Write every payload image to `<base>/<output_path>/<output_name><suffix>.png` and show the output grid. |
+| **JIP Save** | Write the role images (cover/base/prep + one per preprocessor) under `<base>/<output_path>/` with a collision-safe increment, and show a labelled grid (filename + full path on hover + dims). |
 
 ### Base directory resolution
 JIP registers a `jip` folder category, so its base roots are enumerated the same
@@ -42,19 +42,21 @@ way comfyui-flakes enumerates its roots:
 
 ## Worked example
 
-Load a Jojo pose image with `output_name = jjba/josuke`, base `Extra Path`,
-`output_path = input/cnets/`, run RMBG + Resize, and CNet Preprocess with the
-default six preprocessors. JIP Save writes, under `<extra base>/input/cnets/jjba/`:
+Load a Jojo pose image with `output_name = jjba/josuke`, `output_path =
+input/cnets/`, run Resize (crop overlay) + RMBG (pick + retouch), and CNet
+Preprocess with the default six preprocessors. JIP Save writes, under
+`<base>/input/cnets/jjba/` (shared increment `000`, then `001`, …):
 
 ```
-josuke.png                 # base (resized)
-josuke_alt.png             # background-removed
-josuke_depthanythingv2.png
-josuke_dwpose.png
-josuke_hed.png
-josuke_densepose.png
-josuke_cannyedge.png
-josuke_lineart.png
+josuke_0_cover_000.png            # copy of the original base (placeholder cover)
+josuke_1_base_000.png             # the original, untouched image from JIP Load
+josuke_2_prep_000.png             # the filtered/working image (after Resize + RMBG)
+josuke_3_depthanythingv2_000.png
+josuke_3_dwpose_000.png
+josuke_3_hed_000.png
+josuke_3_densepose_000.png
+josuke_3_cannyedge_000.png
+josuke_3_lineart_000.png
 ```
 
 ## Installation
