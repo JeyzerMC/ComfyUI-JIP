@@ -35,6 +35,11 @@ class JIPLoad(io.ComfyNode):
                     image_folder=io.FolderType.input,
                     tooltip="Source image to preprocess.",
                 ),
+                io.Boolean.Input(
+                    "consume",
+                    default=False,
+                    tooltip="Move the source image instead of copying: after a successful JIP Save the original input file is deleted.",
+                ),
                 io.String.Input("output_name", default="", tooltip="e.g. jjba/josuke"),
                 io.String.Input("output_path", default="input/cnets/"),
                 io.Combo.Input(
@@ -57,13 +62,13 @@ class JIPLoad(io.ComfyNode):
         return True
 
     @classmethod
-    def fingerprint_inputs(cls, image: str, output_name: str, output_path: str, base_dir: str):
+    def fingerprint_inputs(cls, image: str, consume: bool, output_name: str, output_path: str, base_dir: str):
         path = folder_paths.get_annotated_filepath(image)
         mtime = os.path.getmtime(path) if os.path.exists(path) else 0
-        return (image, mtime, output_name, output_path, base_dir)
+        return (image, mtime, consume, output_name, output_path, base_dir)
 
     @classmethod
-    def execute(cls, image: str, output_name: str, output_path: str, base_dir: str) -> io.NodeOutput:
+    def execute(cls, image: str, consume: bool, output_name: str, output_path: str, base_dir: str) -> io.NodeOutput:
         image_path = folder_paths.get_annotated_filepath(image)
         img = node_helpers.pillow(Image.open, image_path)
         img = node_helpers.pillow(ImageOps.exif_transpose, img)
@@ -79,5 +84,7 @@ class JIPLoad(io.ComfyNode):
             base_root=base_dir,
             output_path=(output_path or "input/cnets/").strip(),
             output_name=output_name.strip(),
+            consume=bool(consume),
+            source_path=image_path,
         )
         return io.NodeOutput(payload, ui=ui.PreviewImage(tensor, cls=cls))

@@ -77,6 +77,17 @@ class JIPSave(io.ComfyNode):
                 print(f"[JIP] failed to save {dest}: {exc}")
         print(f"[JIP] saved {saved}/{len(roles)} image(s) under {os.path.abspath(directory)} (increment {nnn})")
 
+        # Consume: move (not copy) the source — only after EVERY role wrote cleanly,
+        # so a partial/failed save never deletes the original (#20).
+        if getattr(payload, "consume", False) and saved == len(roles):
+            src = getattr(payload, "source_path", "") or ""
+            if src and os.path.isfile(src):
+                try:
+                    os.remove(src)
+                    print(f"[JIP] consumed source image (moved): {src}")
+                except Exception as exc:
+                    print(f"[JIP] consume failed to delete {src}: {exc}")
+
         # Output grid: batch the written images that share the first one's H/W.
         if not written:
             return io.NodeOutput()

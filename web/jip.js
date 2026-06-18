@@ -30,6 +30,9 @@ function setupLoad(nodeType) {
             return `${v}: ${r ? fwd(r.path) : "(unknown)"}`;
         };
 
+        // Consume toggle, styled like the CNet boxes, under the image (#20).
+        makeToggleBox(this, "consume", "Consume (move source)");
+
         // Plain grey label showing the full output path, no field-name (#10).
         const labelEl = document.createElement("div");
         labelEl.style.cssText = "padding:3px 8px;font-size:10px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;";
@@ -90,6 +93,36 @@ function setupCNet(nodeType) {
         makeToggleGrid(this, CNET_LABELS, "cnet_grid");
         return r;
     };
+}
+
+// A single styled toggle box bound to one boolean widget (#20). Mirrors the
+// look of the CNet toggle boxes; hides the native checkbox.
+function makeToggleBox(node, widgetName, label) {
+    const w = node.widgets?.find((x) => x.name === widgetName);
+    if (!w) return;
+    w.computeSize = () => [0, -4];
+    w.type = "hidden";
+    w.hidden = true;
+
+    const box = document.createElement("div");
+    const render = () => {
+        const on = !!w.value;
+        box.style.cssText = `box-sizing:border-box;min-height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;user-select:none;text-align:center;padding:4px;line-height:1.15;border:1px solid ${on ? "#4a9eff" : "#444"};background:${on ? "rgba(74,158,255,0.18)" : "#2a2a2a"};color:${on ? "#cfe6ff" : "#9a9a9a"};`;
+        box.textContent = label;
+    };
+    box.addEventListener("click", () => {
+        w.value = !w.value;
+        if (typeof w.callback === "function") w.callback(w.value);
+        render();
+        app.graph?.setDirtyCanvas(true, false);
+    });
+    render();
+
+    const container = document.createElement("div");
+    container.style.cssText = "padding:4px 6px;box-sizing:border-box;";
+    container.appendChild(box);
+    const widget = node.addDOMWidget(`${widgetName}_box`, "div", container, { serialize: false, margin: 4 });
+    widget.computeSize = () => [node.size[0], 34];
 }
 
 // Hide the named boolean widgets and drive them from a grid of toggleable

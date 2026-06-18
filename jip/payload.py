@@ -26,6 +26,10 @@ class JIPPayload:
     base_root: str = "Comfy Install"
     output_path: str = "cnets/"
     output_name: str = ""
+    # When True, JIP Save deletes the source input file after a successful save (#20).
+    consume: bool = False
+    # Absolute path of the source image from JIP Load (for consume).
+    source_path: str = ""
 
     def copy(self) -> "JIPPayload":
         return JIPPayload(
@@ -35,6 +39,8 @@ class JIPPayload:
             base_root=self.base_root,
             output_path=self.output_path,
             output_name=self.output_name,
+            consume=self.consume,
+            source_path=self.source_path,
         )
 
     # -- role accessors (#17) -------------------------------------------------
