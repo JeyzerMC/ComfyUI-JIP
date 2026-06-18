@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { initInteractive } from "./jip-overlay.js";
 import "./jip-rmbg.js";     // registers the "rmbg" overlay handler (#11)
+import "./jip-resize.js";   // registers the "resize" overlay handler (#12)
 
 // Subscribe to the backend pause/resume handshake once at load (#22).
 initInteractive();

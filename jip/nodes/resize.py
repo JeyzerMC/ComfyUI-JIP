@@ -1,38 +1,18 @@
-"""JIP Resize node — resize/crop the working image to target dimensions (#4).
+"""JIP Resize node — interactive crop/resize overlay (#4, #12).
 
-The functional core (cover-crop / stretch to exact target dims) runs from the
-width/height/mode widgets. The interactive overlay (live outline, drag-to-crop,
-shortest-edge fit buttons) is deferred frontend polish layered on top.
+The node carries only the per-orientation default dimensions (Portrait W/H,
+Landscape W/H). On run it pauses and the frontend opens an overlay: it draws an
+outline at the default dims for the image's orientation and offers fit-to-outline,
+crop-to-outline, manual crop, or stretch. The confirmed image (always at the
+chosen output dims) becomes the payload's working/_alt image. No on-node preview.
 """
 
 from __future__ import annotations
 
-import numpy as np
-import torch
-from PIL import Image
-
-from comfy_api.v0_0_2 import io, ui
+from comfy_api.v0_0_2 import io
 
 from ..payload import JIPPayloadIO
-
-MODES = ["cover", "stretch"]
-
-
-def _resize_one(tensor, width: int, height: int, mode: str):
-    arr = (tensor[0].detach().clamp(0, 1).cpu().numpy() * 255.0).round().astype(np.uint8)
-    img = Image.fromarray(arr)
-    if mode == "stretch":
-        out = img.resize((width, height), Image.LANCZOS)
-    else:  # cover: scale by the longer ratio so the image fills, then center-crop
-        w, h = img.size
-        scale = max(width / w, height / h)
-        nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
-        img = img.resize((nw, nh), Image.LANCZOS)
-        left = (nw - width) // 2
-        top = (nh - height) // 2
-        out = img.crop((left, top, left + width, top + height))
-    out_arr = np.array(out).astype(np.float32) / 255.0
-    return torch.from_numpy(out_arr)[None,]
+from .. import interactive
 
 
 class JIPResize(io.ComfyNode):
@@ -42,12 +22,13 @@ class JIPResize(io.ComfyNode):
             node_id="JIPResize",
             display_name="JIP Resize",
             category="JIP",
-            description="Resize and crop the working image(s) to exact target dimensions.",
+            description="Pause and open a crop/resize overlay using the per-orientation default dimensions.",
             inputs=[
                 JIPPayloadIO.Input("payload"),
-                io.Int.Input("width", default=853, min=1, max=8192),
-                io.Int.Input("height", default=1440, min=1, max=8192),
-                io.Combo.Input("mode", options=MODES, tooltip="cover = scale shortest edge then center-crop; stretch = exact resize."),
+                io.Int.Input("portrait_width", default=853, min=1, max=8192),
+                io.Int.Input("portrait_height", default=1440, min=1, max=8192),
+                io.Int.Input("landscape_width", default=1440, min=1, max=8192),
+                io.Int.Input("landscape_height", default=853, min=1, max=8192),
             ],
             outputs=[
                 JIPPayloadIO.Output("payload"),
@@ -55,13 +36,32 @@ class JIPResize(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, payload, width: int, height: int, mode: str) -> io.NodeOutput:
+    def execute(cls, payload, portrait_width: int, portrait_height: int,
+                landscape_width: int, landscape_height: int) -> io.NodeOutput:
         if payload is None or not getattr(payload, "images", None):
             raise ValueError("JIP Resize: payload has no images (connect JIP Load).")
+
+        src = payload.working_image()
+        # tensor is [1, H, W, C]
+        h, w = int(src.shape[1]), int(src.shape[2])
+        portrait = h > w
+        out_w, out_h = (portrait_width, portrait_height) if portrait else (landscape_width, landscape_height)
+
+        result = interactive.request(
+            "resize",
+            [src],
+            extra={
+                "orientation": "portrait" if portrait else "landscape",
+                "default_w": int(out_w),
+                "default_h": int(out_h),
+            },
+        )
+        edited = result.get("image")
+        if not edited:
+            raise RuntimeError("JIP Resize: overlay returned no image.")
+        alt = interactive.decode_image(edited)
+
         out = payload.copy()
-        # Resize the working image into _alt — never overwrite the original base,
-        # so JIP Save still writes the true original as the base image (#17).
-        resized = _resize_one(out.working_image(), width, height, mode)
-        out.set_working(resized)
-        out.dims = (width, height)
-        return io.NodeOutput(out, ui=ui.PreviewImage(resized, cls=cls))
+        out.set_working(alt)
+        out.dims = (int(alt.shape[2]), int(alt.shape[1]))
+        return io.NodeOutput(out)
