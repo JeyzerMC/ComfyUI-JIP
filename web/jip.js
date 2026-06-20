@@ -52,8 +52,9 @@ function setupLoad(nodeType) {
             return r ? fwd(r.path) : v;
         };
 
-        // Consume toggle, styled like the CNet boxes, under the image (#20).
-        makeToggleBox(this, "consume", "Consume (move source)");
+        // Consume row (label + toggle switch), placed directly under the image
+        // widget and above output_name (#24).
+        makeToggleBox(this, "consume", "Consume", "image");
 
         // Plain grey label showing the full output path, no field-name (#10).
         const labelEl = document.createElement("div");
@@ -199,34 +200,62 @@ function setupCNet(nodeType) {
     };
 }
 
-// A single styled toggle box bound to one boolean widget (#20). Mirrors the
-// look of the CNet toggle boxes; hides the native checkbox.
-function makeToggleBox(node, widgetName, label) {
+// A label + toggle-switch row bound to one boolean widget (#24): the label sits
+// on the left, an on/off switch on the right. Hides the native checkbox and can
+// be positioned directly after another widget (e.g. under `image`).
+function makeToggleBox(node, widgetName, label, afterName) {
     const w = node.widgets?.find((x) => x.name === widgetName);
     if (!w) return;
     w.computeSize = () => [0, -4];
     w.type = "hidden";
     w.hidden = true;
 
-    const box = document.createElement("div");
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;box-sizing:border-box;cursor:pointer;user-select:none;";
+    const lbl = document.createElement("span");
+    lbl.textContent = label;
+    lbl.style.cssText = "font-size:12px;color:#cfcfcf;";
+    if (w.tooltip) row.title = w.tooltip;
+
+    const sw = document.createElement("div");
+    const knob = document.createElement("div");
+    sw.appendChild(knob);
     const render = () => {
         const on = !!w.value;
-        box.style.cssText = `box-sizing:border-box;min-height:26px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;user-select:none;text-align:center;padding:4px;line-height:1.15;border:1px solid ${on ? "#4a9eff" : "#444"};background:${on ? "rgba(74,158,255,0.18)" : "#2a2a2a"};color:${on ? "#cfe6ff" : "#9a9a9a"};`;
-        box.textContent = label;
+        sw.style.cssText = `position:relative;width:38px;height:20px;border-radius:10px;background:${on ? "#4a9eff" : "#555"};transition:background .15s;flex:0 0 auto;`;
+        knob.style.cssText = `position:absolute;top:2px;left:${on ? "20px" : "2px"};width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s;`;
     };
-    box.addEventListener("click", () => {
+    row.append(lbl, sw);
+    render();
+
+    row.addEventListener("click", () => {
         w.value = !w.value;
         if (typeof w.callback === "function") w.callback(w.value);
         render();
         app.graph?.setDirtyCanvas(true, false);
     });
-    render();
 
-    const container = document.createElement("div");
-    container.style.cssText = "padding:4px 6px;box-sizing:border-box;";
-    container.appendChild(box);
-    const widget = node.addDOMWidget(`${widgetName}_box`, "div", container, { serialize: false, margin: 4 });
-    widget.computeSize = () => [node.size[0], 34];
+    const widget = node.addDOMWidget(`${widgetName}_box`, "div", row, { serialize: false, margin: 4 });
+    widget.computeSize = () => [node.size[0], 26];
+
+    // Position the row directly after `afterName` (e.g. the image widget) so it
+    // sits above output_name (#24). The DOM widget is serialize:false, so moving
+    // it never affects the serialized order of the real widgets.
+    if (afterName) {
+        const widx = node.widgets.indexOf(widget);
+        if (widx >= 0) node.widgets.splice(widx, 1);
+        const ai = node.widgets.findIndex((x) => x.name === afterName);
+        node.widgets.splice(ai >= 0 ? ai + 1 : node.widgets.length, 0, widget);
+    }
+
+    // Re-sync after a graph load restores the widget value (#24, mirrors #30).
+    const prevConfigure = node.onConfigure;
+    node.onConfigure = function () {
+        const r = prevConfigure?.apply(this, arguments);
+        render();
+        app.graph?.setDirtyCanvas(true, false);
+        return r;
+    };
 }
 
 // Hide the named boolean widgets and drive them from a grid of toggleable

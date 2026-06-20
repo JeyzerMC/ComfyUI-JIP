@@ -38,6 +38,7 @@ class JIPLoad(io.ComfyNode):
                 io.Boolean.Input(
                     "consume",
                     default=False,
+                    socketless=True,  # no input pin — driven by the on-node toggle (#24)
                     tooltip="Move the source image instead of copying: after a successful JIP Save the original input file is deleted.",
                 ),
                 io.String.Input("output_name", default="", tooltip="e.g. jjba/josuke"),
