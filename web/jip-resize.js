@@ -1,13 +1,15 @@
-// JIP Resize overlay (#26): a freely resizable outline rectangle over the image.
+// JIP Resize overlay (#26, #34): a freely resizable outline rectangle over the
+// image (centered), with a uniform image-scale slider.
+//   - Scale slider (left): uniformly resamples the source image, updating the
+//     effective image dimensions; the outline scales with it.
 //   - The rectangle starts at the node's per-orientation dims (default_w/h),
-//     centered, clamped to the image.
-//   - Drag the body to move; drag an edge to change one dimension; drag a corner
-//     to change both (no aspect lock).
-//   - Width/Height fields (bottom-left) show the rectangle's pixel dimensions,
-//     update live as it resizes, and can be typed into to drive the rectangle.
+//     centered, clamped to the image. Drag the body to move, an edge to change
+//     one dimension, a corner to change both (no aspect lock).
+//   - Width/Height fields (center) show the rectangle's pixel dimensions, update
+//     live, and can be typed into. Fit/Crop buttons (right).
 //   - Crop to outline: output = the rectangle's image region at its W x H.
-//   - Fit to outline (toggle): preview/output stretches the WHOLE image to the
-//     rectangle's W x H (aspect ignored); deselecting returns to the crop view.
+//   - Fit to outline (toggle): output stretches the WHOLE image to the rectangle
+//     W x H (aspect ignored).
 // The confirmed image is returned as a base64 PNG at the rectangle's W x H;
 // resize.py derives the output dims from it.
 import {
@@ -27,26 +29,37 @@ async function openResize(detail) {
     try { img = await loadImage(images[0]); }
     catch (e) { console.error("[JIP] Resize: failed to load image", e); modal.close(); cancelToken(token); return; }
 
-    const iw = img.naturalWidth, ih = img.naturalHeight;
+    // Natural (source) dims; effective dims = natural * imgScale.
+    const iw0 = img.naturalWidth, ih0 = img.naturalHeight;
+    let imgScale = 1;
+    let iw = iw0, ih = ih0;
 
-    const maxW = Math.min(window.innerWidth * 0.7, 900);
-    const maxH = window.innerHeight * 0.56;
-    const scale = Math.min(maxW / iw, maxH / ih, 1);
-    const dispW = Math.round(iw * scale), dispH = Math.round(ih * scale);
+    // Display fit (recomputed whenever the effective image size changes).
+    let scale = 1, dispW = iw, dispH = ih;
 
     const canvas = document.createElement("canvas");
-    canvas.width = dispW; canvas.height = dispH;
     canvas.style.cssText = "background:#111;border:1px solid #333;border-radius:4px;touch-action:none;display:block;";
     const ctx = canvas.getContext("2d");
 
-    const MIN = 8;            // minimum rectangle size in image px
-    const HANDLE = 10 / scale; // hit radius in image px
+    const MIN = 8; // minimum rectangle size in (effective) image px
 
     // Start rect = node dims (clamped to the image), centered.
     let rw = clamp(default_w, MIN, iw), rh = clamp(default_h, MIN, ih);
     let rect = { x: (iw - rw) / 2, y: (ih - rh) / 2, w: rw, h: rh };
 
     let mode = "crop"; // "crop" | "fit"
+
+    const recomputeDisplay = () => {
+        const maxW = Math.min(window.innerWidth * 0.7, 900);
+        const maxH = window.innerHeight * 0.56;
+        scale = Math.min(maxW / iw, maxH / ih, 1);
+        dispW = Math.max(1, Math.round(iw * scale));
+        dispH = Math.max(1, Math.round(ih * scale));
+        canvas.width = dispW; canvas.height = dispH;
+    };
+    recomputeDisplay();
+
+    const HANDLE = () => 10 / scale; // hit radius in (effective) image px
 
     const toImg = (e) => {
         const r = canvas.getBoundingClientRect();
@@ -60,9 +73,9 @@ async function openResize(detail) {
             // Preview the stretch: the whole image squeezed into the rectangle box.
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, dispW, dispH);
-            ctx.drawImage(img, 0, 0, iw, ih, rx, ry, rw2, rh2);
+            ctx.drawImage(img, 0, 0, iw0, ih0, rx, ry, rw2, rh2);
         } else {
-            ctx.drawImage(img, 0, 0, dispW, dispH);
+            ctx.drawImage(img, 0, 0, iw0, ih0, 0, 0, dispW, dispH);
             // dim outside the rectangle
             ctx.fillStyle = "rgba(0,0,0,0.5)";
             ctx.fillRect(0, 0, dispW, ry);
@@ -84,12 +97,13 @@ async function openResize(detail) {
 
     // Which handle (corner/edge) or body is under the pointer.
     const hitTest = (x, y) => {
-        const nearL = Math.abs(x - rect.x) < HANDLE;
-        const nearR = Math.abs(x - (rect.x + rect.w)) < HANDLE;
-        const nearT = Math.abs(y - rect.y) < HANDLE;
-        const nearB = Math.abs(y - (rect.y + rect.h)) < HANDLE;
-        const inX = x > rect.x - HANDLE && x < rect.x + rect.w + HANDLE;
-        const inY = y > rect.y - HANDLE && y < rect.y + rect.h + HANDLE;
+        const H = HANDLE();
+        const nearL = Math.abs(x - rect.x) < H;
+        const nearR = Math.abs(x - (rect.x + rect.w)) < H;
+        const nearT = Math.abs(y - rect.y) < H;
+        const nearB = Math.abs(y - (rect.y + rect.h)) < H;
+        const inX = x > rect.x - H && x < rect.x + rect.w + H;
+        const inY = y > rect.y - H && y < rect.y + rect.h + H;
         if (nearT && nearL) return "tl";
         if (nearT && nearR) return "tr";
         if (nearB && nearL) return "bl";
@@ -143,20 +157,49 @@ async function openResize(detail) {
     canvas.addEventListener("pointerup", endDrag);
     canvas.addEventListener("pointercancel", endDrag);
 
-    // ── bottom row: W/H fields (left) + tool buttons (right) ──
+    // ── centered canvas ──
+    const canvasWrap = document.createElement("div");
+    canvasWrap.style.cssText = "display:flex;justify-content:center;width:100%;";
+    canvasWrap.appendChild(canvas);
+
+    // ── bottom row: scale slider (left) · W/H fields (center) · buttons (right) ──
+    // Scale slider — uniformly resamples the source image (#34).
+    const scaleLabel = document.createElement("span");
+    scaleLabel.style.cssText = "font-size:11px;color:#aaa;white-space:nowrap;";
+    const scaleSlider = document.createElement("input");
+    scaleSlider.type = "range"; scaleSlider.min = "25"; scaleSlider.max = "400"; scaleSlider.step = "1"; scaleSlider.value = "100";
+    scaleSlider.style.cssText = "width:120px;vertical-align:middle;";
+    const syncScaleLabel = () => { scaleLabel.textContent = `Scale ${Math.round(imgScale * 100)}% · ${iw}×${ih}`; };
+    scaleSlider.addEventListener("input", () => {
+        const next = Math.max(0.05, (+scaleSlider.value) / 100);
+        const ratio = next / imgScale;
+        imgScale = next;
+        iw = Math.max(1, Math.round(iw0 * imgScale));
+        ih = Math.max(1, Math.round(ih0 * imgScale));
+        // scale the rectangle with the image, then re-clamp to the new bounds
+        rect = { x: rect.x * ratio, y: rect.y * ratio, w: rect.w * ratio, h: rect.h * ratio };
+        rect.w = clamp(rect.w, MIN, iw); rect.h = clamp(rect.h, MIN, ih);
+        rect.x = clamp(rect.x, 0, iw - rect.w); rect.y = clamp(rect.y, 0, ih - rect.h);
+        recomputeDisplay();
+        syncScaleLabel(); syncFields(); redraw();
+    });
+    const scaleGroup = document.createElement("div");
+    scaleGroup.style.cssText = "display:flex;align-items:center;gap:8px;";
+    scaleGroup.append(scaleSlider, scaleLabel);
+
+    // W/H fields — match the buttons' height/font, 20% wider than before (#34).
     const dimInput = (val) => {
         const i = document.createElement("input");
         i.type = "number"; i.min = "1"; i.max = "8192"; i.value = String(val);
-        i.style.cssText = "width:54px;box-sizing:border-box;background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:4px;padding:3px 5px;font-size:12px;text-align:center;";
+        i.style.cssText = "width:65px;box-sizing:border-box;background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:5px;padding:6px 8px;font-size:13px;text-align:center;";
         return i;
     };
     const wIn = dimInput(Math.round(rect.w));
     const hIn = dimInput(Math.round(rect.h));
     const syncFields = () => { wIn.value = String(Math.round(rect.w)); hIn.value = String(Math.round(rect.h)); };
     const applyField = () => {
-        let w = clamp(parseInt(wIn.value, 10) || rect.w, MIN, iw);
-        let h = clamp(parseInt(hIn.value, 10) || rect.h, MIN, ih);
-        // keep top-left anchored; clamp position so the rect stays in the image
+        const w = clamp(parseInt(wIn.value, 10) || rect.w, MIN, iw);
+        const h = clamp(parseInt(hIn.value, 10) || rect.h, MIN, ih);
         rect.w = w; rect.h = h;
         rect.x = clamp(rect.x, 0, iw - w);
         rect.y = clamp(rect.y, 0, ih - h);
@@ -166,10 +209,13 @@ async function openResize(detail) {
     hIn.addEventListener("change", applyField);
 
     const dims = document.createElement("div");
-    dims.style.cssText = "display:flex;align-items:center;gap:6px;font-size:11px;color:#aaa;";
+    dims.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;";
     const wl = document.createElement("span"); wl.textContent = "W";
     const hl = document.createElement("span"); hl.textContent = "H";
     dims.append(wl, wIn, hl, hIn);
+    const dimsCenter = document.createElement("div");
+    dimsCenter.style.cssText = "flex:1;display:flex;justify-content:center;";
+    dimsCenter.appendChild(dims);
 
     const fitB = button("Fit to outline");
     const cropB = button("Crop to outline");
@@ -188,13 +234,13 @@ async function openResize(detail) {
 
     const bottomRow = document.createElement("div");
     bottomRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;";
-    bottomRow.append(dims, buttons);
+    bottomRow.append(scaleGroup, dimsCenter, buttons);
 
     const hint = document.createElement("div");
-    hint.textContent = "Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit to outline stretches the whole image to the W x H; Crop keeps the image and crops to the rectangle.";
+    hint.textContent = "Scale the image with the slider. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit stretches the whole image to the W x H; Crop crops to the rectangle.";
     hint.style.cssText = "font-size:11px;color:#888;margin-top:6px;";
 
-    modal.body.append(canvas, bottomRow, hint);
+    modal.body.append(canvasWrap, bottomRow, hint);
 
     // ── footer ──
     const cancelBtn = button("Cancel");
@@ -208,7 +254,9 @@ async function openResize(detail) {
     modal.footer.append(cancelBtn, confirmBtn);
 
     setMode("crop");
+    syncScaleLabel();
     syncFields();
+    redraw();
 
     function exportImage() {
         const outW = Math.max(1, Math.round(rect.w));
@@ -218,11 +266,14 @@ async function openResize(detail) {
         const octx = out.getContext("2d");
         octx.fillStyle = "#ffffff"; octx.fillRect(0, 0, outW, outH);
         if (mode === "fit") {
-            // stretch the whole image to the output dims (aspect ignored)
-            octx.drawImage(img, 0, 0, iw, ih, 0, 0, outW, outH);
+            // stretch the whole (natural) image to the output dims (aspect ignored)
+            octx.drawImage(img, 0, 0, iw0, ih0, 0, 0, outW, outH);
         } else {
-            // crop: the rectangle's image region at its own pixel size
-            octx.drawImage(img, rect.x, rect.y, rect.w, rect.h, 0, 0, outW, outH);
+            // crop: map the rectangle (effective px) back to natural source px,
+            // then output at the rectangle's (scaled) pixel size
+            const sx = rect.x / imgScale, sy = rect.y / imgScale;
+            const sw = rect.w / imgScale, sh = rect.h / imgScale;
+            octx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
         }
         return out.toDataURL("image/png");
     }
