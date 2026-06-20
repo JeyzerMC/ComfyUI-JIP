@@ -1,7 +1,8 @@
-// JIP RMBG overlay (#11): pick one of the model results, then retouch it with an
-// eraser (paint background colour) and a magic-fill (flood-fill a region to the
-// background colour) before confirming. The confirmed canvas is returned as a
-// base64 PNG and becomes the payload's working/_alt image.
+// JIP RMBG overlay (#11, #28): pick one of the model results, then retouch it
+// with an eraser (paint background colour) and a magic-fill (flood-fill a region
+// to the background colour) before confirming. Supports undo/redo, an eraser
+// hover ring, and a magic-fill strength control. The confirmed canvas is
+// returned as a base64 PNG and becomes the payload's working/_alt image.
 import {
     registerOverlay, createModal, button, resolveToken, cancelToken, loadImage,
 } from "./jip-overlay.js";
@@ -21,10 +22,30 @@ async function openRmbg(detail) {
         modal.close(); cancelToken(token); return;
     }
 
-    // ── editing canvas ──
+    // ── editing canvas (wrapped so the eraser ring can overlay it) ──
+    const canvasWrap = document.createElement("div");
+    canvasWrap.style.cssText = "position:relative;display:inline-block;line-height:0;";
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "max-width:70vw;max-height:64vh;background:#111;border:1px solid #333;border-radius:4px;cursor:crosshair;touch-action:none;";
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const ring = document.createElement("div");
+    ring.style.cssText = "position:absolute;border:1px solid #4a9eff;border-radius:50%;pointer-events:none;display:none;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,0.5);";
+    canvasWrap.append(canvas, ring);
+
+    // ── undo/redo history of canvas snapshots ──
+    let history = [];
+    let hindex = -1;
+    const snapshot = () => ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const resetHistory = () => { history = [snapshot()]; hindex = 0; updateUndoButtons(); };
+    const pushHistory = () => {
+        history = history.slice(0, hindex + 1);
+        history.push(snapshot());
+        hindex = history.length - 1;
+        updateUndoButtons();
+    };
+    const restore = () => { ctx.putImageData(history[hindex], 0, 0); };
+    const undo = () => { if (hindex > 0) { hindex--; restore(); updateUndoButtons(); } };
+    const redo = () => { if (hindex < history.length - 1) { hindex++; restore(); updateUndoButtons(); } };
 
     let selected = 0;
     const loadInto = (i) => {
@@ -34,6 +55,7 @@ async function openRmbg(detail) {
         canvas.height = im.naturalHeight;
         ctx.drawImage(im, 0, 0);
         thumbs.forEach((t, k) => { t.style.outline = k === i ? "2px solid #4a9eff" : "2px solid transparent"; });
+        resetHistory();
     };
 
     // ── thumbnails (one per model result) ──
@@ -56,32 +78,85 @@ async function openRmbg(detail) {
 
     // ── tools ──
     let tool = "eraser";
-    let brush = 28;
-    const toolbar = document.createElement("div");
-    toolbar.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap;";
+    let brush = 28;       // eraser diameter (canvas px)
+    let strength = 36;    // magic-fill tolerance (per-channel)
+
+    // left group: undo / redo
+    const undoBtn = button("↶ Undo");
+    const redoBtn = button("↷ Redo");
+    undoBtn.title = "Undo (Ctrl+Z)";
+    redoBtn.title = "Redo (Ctrl+Shift+Z)";
+    undoBtn.addEventListener("click", undo);
+    redoBtn.addEventListener("click", redo);
+    const updateUndoButtons = () => {
+        undoBtn.style.opacity = hindex > 0 ? "1" : "0.4";
+        redoBtn.style.opacity = hindex < history.length - 1 ? "1" : "0.4";
+    };
+    const leftGroup = document.createElement("div");
+    leftGroup.style.cssText = "display:flex;gap:6px;align-items:center;";
+    leftGroup.append(undoBtn, redoBtn);
+
+    // center group: size/strength slider + reset
+    const sizeLabel = document.createElement("span");
+    sizeLabel.style.cssText = "font-size:12px;color:#aaa;min-width:88px;text-align:right;";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    const reset = button("Reset");
+    reset.addEventListener("click", () => loadInto(selected));
+    const syncSlider = () => {
+        if (tool === "fill") {
+            slider.min = "1"; slider.max = "150"; slider.value = String(strength);
+            sizeLabel.textContent = `Strength: ${strength}`;
+        } else {
+            slider.min = "2"; slider.max = "120"; slider.value = String(brush);
+            sizeLabel.textContent = `Brush: ${brush}px`;
+        }
+    };
+    slider.addEventListener("input", () => {
+        if (tool === "fill") strength = +slider.value; else brush = +slider.value;
+        syncSlider();
+        positionRing(lastPointer);
+    });
+    const centerGroup = document.createElement("div");
+    centerGroup.style.cssText = "display:flex;gap:10px;align-items:center;flex:1;justify-content:center;";
+    centerGroup.append(sizeLabel, slider, reset);
+
+    // right group: tool selection
     const eraserBtn = button("Eraser");
     const fillBtn = button("Magic fill");
     const setTool = (t) => {
         tool = t;
         eraserBtn.style.borderColor = t === "eraser" ? "#4a9eff" : "#555";
         fillBtn.style.borderColor = t === "fill" ? "#4a9eff" : "#555";
+        canvas.style.cursor = t === "eraser" ? "none" : "crosshair";
+        ring.style.display = "none";
+        syncSlider();
     };
     eraserBtn.addEventListener("click", () => setTool("eraser"));
     fillBtn.addEventListener("click", () => setTool("fill"));
+    const rightGroup = document.createElement("div");
+    rightGroup.style.cssText = "display:flex;gap:8px;align-items:center;";
+    rightGroup.append(eraserBtn, fillBtn);
 
-    const sizeLabel = document.createElement("span");
-    sizeLabel.style.cssText = "font-size:12px;color:#aaa;";
-    const slider = document.createElement("input");
-    slider.type = "range"; slider.min = "2"; slider.max = "120"; slider.value = String(brush);
-    const syncSize = () => { brush = +slider.value; sizeLabel.textContent = `Brush: ${brush}px`; };
-    slider.addEventListener("input", syncSize); syncSize();
+    const toolbar = document.createElement("div");
+    toolbar.style.cssText = "display:flex;align-items:center;gap:10px;margin:10px 0;";
+    toolbar.append(leftGroup, centerGroup, rightGroup);
 
-    const reset = button("Reset");
-    reset.addEventListener("click", () => loadInto(selected));
-    toolbar.append(eraserBtn, fillBtn, sizeLabel, slider, reset);
-    setTool("eraser");
+    modal.body.append(thumbRow, canvasWrap, toolbar);
 
-    modal.body.append(thumbRow, canvas, toolbar);
+    // ── eraser hover ring ──
+    let lastPointer = null;
+    const positionRing = (e) => {
+        if (!e || tool !== "eraser") { ring.style.display = "none"; return; }
+        const r = canvas.getBoundingClientRect();
+        const dispScale = r.width / canvas.width; // canvas px -> screen px
+        const d = brush * dispScale;
+        ring.style.width = `${d}px`;
+        ring.style.height = `${d}px`;
+        ring.style.left = `${e.clientX - r.left}px`;
+        ring.style.top = `${e.clientY - r.top}px`;
+        ring.style.display = "block";
+    };
 
     // ── painting ──
     const toCanvas = (e) => {
@@ -100,25 +175,44 @@ async function openRmbg(detail) {
     let painting = false;
     canvas.addEventListener("pointerdown", (e) => {
         const [x, y] = toCanvas(e);
-        if (tool === "fill") { floodFill(ctx, x, y, bg_color, 36); return; }
+        if (tool === "fill") { floodFill(ctx, x, y, bg_color, strength); pushHistory(); return; }
         painting = true; canvas.setPointerCapture(e.pointerId); erase(x, y);
     });
-    canvas.addEventListener("pointermove", (e) => { if (painting) { const [x, y] = toCanvas(e); erase(x, y); } });
-    const stop = () => { painting = false; };
+    canvas.addEventListener("pointermove", (e) => {
+        lastPointer = e;
+        positionRing(e);
+        if (painting) { const [x, y] = toCanvas(e); erase(x, y); }
+    });
+    const stop = () => { if (painting) { painting = false; pushHistory(); } };
     canvas.addEventListener("pointerup", stop);
     canvas.addEventListener("pointercancel", stop);
+    canvas.addEventListener("pointerleave", () => { ring.style.display = "none"; });
+
+    // ── keyboard undo/redo ──
+    const onKey = (e) => {
+        const z = e.key === "z" || e.key === "Z";
+        if ((e.ctrlKey || e.metaKey) && z) {
+            e.preventDefault();
+            if (e.shiftKey) redo(); else undo();
+        } else if ((e.ctrlKey || e.metaKey) && (e.key === "y" || e.key === "Y")) {
+            e.preventDefault(); redo();
+        }
+    };
+    document.addEventListener("keydown", onKey);
+    const cleanup = () => document.removeEventListener("keydown", onKey);
 
     // ── footer ──
     const cancelBtn = button("Cancel");
     const confirmBtn = button("Confirm", true);
-    cancelBtn.addEventListener("click", () => { modal.close(); cancelToken(token); });
+    cancelBtn.addEventListener("click", () => { cleanup(); modal.close(); cancelToken(token); });
     confirmBtn.addEventListener("click", () => {
         const dataUrl = canvas.toDataURL("image/png");
-        modal.close();
+        cleanup(); modal.close();
         resolveToken(token, { image: dataUrl, picked: selected });
     });
     modal.footer.append(cancelBtn, confirmBtn);
 
+    setTool("eraser");
     loadInto(0);
 }
 
