@@ -236,6 +236,7 @@ function makeToggleGrid(node, labels, widgetId) {
     container.style.cssText = "display:grid;grid-template-columns:repeat(2, 1fr);gap:4px;padding:4px 6px;box-sizing:border-box;";
 
     let count = 0;
+    const renders = [];  // re-render every box from its widget value (#30)
     for (const label of labels) {
         const w = node.widgets?.find((x) => x.name === label);
         if (!w) continue;
@@ -252,6 +253,7 @@ function makeToggleGrid(node, labels, widgetId) {
             box.style.cssText = `box-sizing:border-box;min-height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;font-size:11px;font-weight:500;user-select:none;text-align:center;padding:4px;line-height:1.15;word-break:break-word;border:1px solid ${on ? "#4a9eff" : "#444"};background:${on ? "rgba(74,158,255,0.18)" : "#2a2a2a"};color:${on ? "#cfe6ff" : "#9a9a9a"};`;
             box.textContent = label;
         };
+        renders.push(render);
         box.addEventListener("click", () => {
             w.value = !w.value;
             if (typeof w.callback === "function") w.callback(w.value);
@@ -261,6 +263,18 @@ function makeToggleGrid(node, labels, widgetId) {
         render();
         container.appendChild(box);
     }
+
+    // After a graph load, ComfyUI restores the (socketless) boolean widget values
+    // via configure() — which runs AFTER onNodeCreated, so the boxes built above
+    // captured the schema defaults. Re-sync every box to the restored values so
+    // the selection persists visually and matches what executes (#30).
+    const prevConfigure = node.onConfigure;
+    node.onConfigure = function () {
+        const r = prevConfigure?.apply(this, arguments);
+        for (const fn of renders) fn();
+        app.graph?.setDirtyCanvas(true, false);
+        return r;
+    };
 
     const widget = node.addDOMWidget(widgetId, "div", container, { serialize: false, margin: 4 });
     widget.computeSize = () => [node.size[0], Math.ceil(count / 2) * 32 + 12];
