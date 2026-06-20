@@ -69,7 +69,7 @@ class JIPSave(io.ComfyNode):
         written: list[tuple[str, "torch.Tensor"]] = []  # (dest, tensor)
         saved = 0
         for role_suffix, tensor in roles:
-            dest = os.path.join(directory, f"{stem}{role_suffix}_{nnn}.png")
+            dest = os.path.join(directory, f"{nnn}_{stem}{role_suffix}.png")
             try:
                 _to_pil(tensor).save(dest)
                 written.append((dest, tensor))

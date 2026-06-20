@@ -23,8 +23,9 @@ import folder_paths
 # Category key registered in jip/__init__.py.
 FOLDER_KEY = "jip"
 
-# Matches a JIP role file: <stem>_<role>_<NNN>.png (#17).
-_ROLE_RE = r"_(?:0_cover|1_base|2_prep|3_\w+)_(\d{3})\.png$"
+# The role-suffix part of a JIP file name (always begins with "_"): one of
+# _0_cover / _1_base / _2_prep / _3_<preproc>.
+_ROLE_PART = r"_(?:0_cover|1_base|2_prep|3_\w+)"
 
 
 def comfy_root() -> str:
@@ -113,14 +114,17 @@ def output_dir_and_stem(base_dir: str, output_path: str, output_name: str) -> tu
 
 
 def next_increment(directory: str, stem: str) -> int:
-    """Lowest free 3-digit increment for ``<stem>_<role>_<NNN>.png`` in directory.
+    """Lowest free 3-digit increment for ``<NNN>_<stem>_<role>.png`` in directory.
 
-    Returns ``max(existing) + 1`` (or 0 when none exist) so an identical re-save
-    of the same name advances to the next slot (#17).
+    The increment is a leading prefix (#23): files are named
+    ``<NNN>_<stem><role>.png`` (e.g. ``000_josuke_0_cover.png``). Returns
+    ``max(existing) + 1`` (or 0 when none exist) so an identical re-save of the
+    same name advances to the next slot (#17). Files written under the old
+    trailing-increment convention are not matched and won't be counted.
     """
     if not os.path.isdir(directory):
         return 0
-    pat = re.compile(re.escape(stem) + _ROLE_RE)
+    pat = re.compile(r"^(\d{3})_" + re.escape(stem) + _ROLE_PART + r"\.png$")
     highest = -1
     try:
         for f in os.listdir(directory):
