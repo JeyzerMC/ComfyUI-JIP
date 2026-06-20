@@ -17,6 +17,7 @@ app.registerExtension({
         else if (nodeData?.name === "JIPCNetPreprocess") setupCNet(nodeType);
         else if (nodeData?.name === "JIPSave") setupSave(nodeType);
         else if (nodeData?.name === "JIPRMBG") setupRMBG(nodeType);
+        else if (nodeData?.name === "JIPResize") setupResize(nodeType);
     },
 });
 
@@ -198,6 +199,87 @@ function setupCNet(nodeType) {
         makeToggleGrid(this, CNET_LABELS, "cnet_grid");
         return r;
     };
+}
+
+// JIP Resize: lay the four dimension ints out as a 2x2 grid (no input pins) (#25):
+//             width   height
+//   portrait  [ ]     [ ]
+//   landscape [ ]     [ ]
+function setupResize(nodeType) {
+    const onNodeCreated = nodeType.prototype.onNodeCreated;
+    nodeType.prototype.onNodeCreated = function () {
+        const r = onNodeCreated?.apply(this, arguments);
+        makeDimGrid(this);
+        return r;
+    };
+}
+
+function makeDimGrid(node) {
+    const rows = [
+        ["portrait", "portrait_width", "portrait_height"],
+        ["landscape", "landscape_width", "landscape_height"],
+    ];
+
+    const container = document.createElement("div");
+    container.style.cssText = "display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 6px;align-items:center;padding:4px 8px;box-sizing:border-box;";
+
+    // Header row: blank corner + column headers.
+    const corner = document.createElement("div");
+    const hW = document.createElement("div"); hW.textContent = "width";
+    const hH = document.createElement("div"); hH.textContent = "height";
+    for (const h of [hW, hH]) h.style.cssText = "font-size:10px;color:#9a9a9a;text-align:center;";
+    container.append(corner, hW, hH);
+
+    const syncs = [];
+    for (const [rowLabel, ...names] of rows) {
+        const lab = document.createElement("div");
+        lab.textContent = rowLabel;
+        lab.style.cssText = "font-size:11px;color:#cfcfcf;";
+        container.appendChild(lab);
+        for (const name of names) {
+            const w = node.widgets?.find((x) => x.name === name);
+            const inp = document.createElement("input");
+            inp.type = "number"; inp.min = "1"; inp.max = "8192";
+            inp.style.cssText = "width:100%;box-sizing:border-box;background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:4px;padding:2px 4px;font-size:11px;text-align:center;";
+            if (w) {
+                w.computeSize = () => [0, -4];
+                w.type = "hidden"; w.hidden = true;
+                const sync = () => { inp.value = String(w.value ?? ""); };
+                sync(); syncs.push(sync);
+                inp.addEventListener("change", () => {
+                    let v = parseInt(inp.value, 10);
+                    if (!Number.isFinite(v)) v = Number(w.value) || 1;
+                    v = Math.max(1, Math.min(8192, v));
+                    inp.value = String(v);
+                    w.value = v;
+                    if (typeof w.callback === "function") w.callback(v);
+                    app.graph?.setDirtyCanvas(true, false);
+                });
+            }
+            container.appendChild(inp);
+        }
+    }
+
+    const widget = node.addDOMWidget("jip_dim_grid", "div", container, { serialize: false, margin: 4 });
+    widget.computeSize = () => [node.size[0], 72];
+
+    // Render the grid directly under the payload pin.
+    const i = node.widgets.indexOf(widget);
+    if (i > 0) { node.widgets.splice(i, 1); node.widgets.unshift(widget); }
+
+    // Re-sync inputs after a graph load restores the int widget values (#25).
+    const prevConfigure = node.onConfigure;
+    node.onConfigure = function () {
+        const r = prevConfigure?.apply(this, arguments);
+        for (const s of syncs) s();
+        app.graph?.setDirtyCanvas(true, false);
+        return r;
+    };
+
+    requestAnimationFrame(() => {
+        node.setSize([node.size[0], node.computeSize()[1]]);
+        app.graph?.setDirtyCanvas(true, true);
+    });
 }
 
 // A label + toggle-switch row bound to one boolean widget (#24): the label sits

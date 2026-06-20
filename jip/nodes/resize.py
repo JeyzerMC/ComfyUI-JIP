@@ -25,10 +25,12 @@ class JIPResize(io.ComfyNode):
             description="Pause and open a crop/resize overlay using the per-orientation default dimensions.",
             inputs=[
                 JIPPayloadIO.Input("payload"),
-                io.Int.Input("portrait_width", default=853, min=1, max=8192),
-                io.Int.Input("portrait_height", default=1440, min=1, max=8192),
-                io.Int.Input("landscape_width", default=1440, min=1, max=8192),
-                io.Int.Input("landscape_height", default=853, min=1, max=8192),
+                # Dimension fields, not input pins (#25): socketless so only the
+                # payload is a pin; the frontend lays these out as a 2x2 grid.
+                io.Int.Input("portrait_width", default=853, min=1, max=8192, socketless=True),
+                io.Int.Input("portrait_height", default=1440, min=1, max=8192, socketless=True),
+                io.Int.Input("landscape_width", default=1440, min=1, max=8192, socketless=True),
+                io.Int.Input("landscape_height", default=853, min=1, max=8192, socketless=True),
             ],
             outputs=[
                 JIPPayloadIO.Output("payload"),
