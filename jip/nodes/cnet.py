@@ -16,13 +16,14 @@ from comfy_api.v0_0_2 import io
 from ..payload import JIPPayloadIO
 
 # label -> (controlnet_aux node-class key, default-on)
+# Four default-selected preprocessors (#29): DepthAnythingV2, DWPose, HED, DensePose.
 PREPROCESSORS = [
     ("DepthAnythingV2", "DepthAnythingV2Preprocessor", True),
     ("DWPose", "DWPreprocessor", True),
     ("HED", "HEDPreprocessor", True),
     ("DensePose", "DensePosePreprocessor", True),
-    ("CannyEdge", "CannyEdgePreprocessor", True),
-    ("LineArt", "LineArtPreprocessor", True),
+    ("CannyEdge", "CannyEdgePreprocessor", False),
+    ("LineArt", "LineArtPreprocessor", False),
     ("Manga2Anime", "Manga2Anime_LineArt_Preprocessor", False),
     ("OpenPose", "OpenposePreprocessor", False),
 ]
@@ -106,7 +107,8 @@ class JIPCNetPreprocess(io.ComfyNode):
             description="Run the selected controlnet preprocessors (via comfyui_controlnet_aux) and append their outputs to the payload.",
             inputs=[
                 JIPPayloadIO.Input("payload"),
-                *[io.Boolean.Input(label, default=default) for label, _node, default in PREPROCESSORS],
+                # socketless: no input pin — the on-node grid drives these (#29).
+                *[io.Boolean.Input(label, default=default, socketless=True) for label, _node, default in PREPROCESSORS],
             ],
             outputs=[
                 JIPPayloadIO.Output("payload"),
