@@ -136,7 +136,20 @@ function renderSaveGrid(node, message) {
 
         const el = document.createElement("img");
         el.src = `/view?filename=${encodeURIComponent(img.filename)}&type=${img.type || "temp"}&subfolder=${encodeURIComponent(img.subfolder || "")}`;
-        el.style.cssText = "width:100%;height:110px;object-fit:contain;background:#1a1a1a;border-radius:3px;";
+        el.style.cssText = "width:100%;height:110px;object-fit:contain;background:#1a1a1a;border-radius:3px;cursor:pointer;";
+        // Double-click reveals the real saved file on disk (#32). The absolute
+        // path comes from the meta the backend shipped; the server confines it
+        // to the JIP roots before opening the OS explorer.
+        if (m.path) {
+            el.title = "Double-click to reveal in file explorer";
+            el.addEventListener("dblclick", () => {
+                fetch("/jip/reveal", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ path: m.path }),
+                }).catch((e) => console.error("[JIP] reveal failed", e));
+            });
+        }
         cell.appendChild(el);
 
         const name = document.createElement("div");

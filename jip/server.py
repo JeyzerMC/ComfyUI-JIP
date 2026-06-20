@@ -8,6 +8,11 @@ from the registered `jip` folder category, so extra roots configured via a
 
 from __future__ import annotations
 
+import logging
+import os
+import subprocess
+import sys
+
 from aiohttp import web
 
 from server import PromptServer
@@ -21,6 +26,52 @@ routes = PromptServer.instance.routes
 @routes.get("/jip/roots")
 async def _jip_roots(_request: web.Request) -> web.Response:
     return web.json_response({"roots": list_roots()})
+
+
+@routes.post("/jip/reveal")
+async def _jip_reveal(request: web.Request) -> web.Response:
+    """Open the OS file explorer at a saved image, selecting it when possible.
+
+    The client posts the absolute ``path`` of a saved file (JIP Save ships it as
+    ``meta[i].path``). The path is confined server-side to the resolved JIP base
+    roots so an arbitrary path from the browser can't be opened (mirrors flakes'
+    ``/flakes/reveal``).
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+    path = (body.get("path") or "").strip() if isinstance(body, dict) else ""
+    if not path:
+        return web.json_response({"error": "missing 'path'"}, status=400)
+
+    real_target = os.path.realpath(path)
+
+    def _within(target: str, root: str) -> bool:
+        if target == root:
+            return True
+        try:
+            return os.path.commonpath([target, root]) == root
+        except ValueError:  # different drives on Windows
+            return False
+
+    roots = [os.path.realpath(e["path"]) for e in list_roots()]
+    if not any(_within(real_target, r) for r in roots):
+        return web.json_response({"error": "path escapes the JIP roots"}, status=400)
+    if not os.path.exists(real_target):
+        return web.json_response({"error": "file not found"}, status=404)
+
+    try:
+        if sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", "/select,", real_target])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", real_target])
+        else:
+            subprocess.Popen(["xdg-open", os.path.dirname(real_target)])
+    except Exception as exc:
+        logging.exception("[JIP] failed to reveal %s", real_target)
+        return web.json_response({"error": str(exc)}, status=500)
+    return web.json_response({"ok": True, "path": real_target})
 
 
 @routes.post("/jip/interactive/resolve")
