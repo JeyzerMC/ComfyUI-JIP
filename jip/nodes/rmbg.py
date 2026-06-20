@@ -43,7 +43,9 @@ class JIPRMBG(io.ComfyNode):
             inputs=[
                 JIPPayloadIO.Input("payload"),
                 # Multi-select model grid (rendered as toggle boxes on the frontend).
-                *[io.Boolean.Input(m, default=(m == "u2net")) for m in MODELS],
+                # All models default-on (#27) — the user picks one result in the overlay.
+                # socketless: no input pin — the grid drives these (#27).
+                *[io.Boolean.Input(m, default=True, socketless=True) for m in MODELS],
                 io.Combo.Input("background", options=list(BACKGROUNDS.keys())),
             ],
             outputs=[
