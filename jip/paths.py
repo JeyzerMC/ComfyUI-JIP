@@ -43,26 +43,32 @@ def _registered_roots() -> list[str]:
 
 
 def list_roots() -> list[dict]:
-    """Selectable base roots as ``[{index, label, path}]`` (flakes parity).
+    """Selectable base roots as ``[{index, label, path}]``.
 
-    The first root under the Comfy install is "Comfy Install"; every other
-    registered root becomes "Extra Path N". Always returns at least the Comfy
-    install root.
+    The Comfy install root is labelled "Comfy Install" (it resolves to the
+    actual install folder on disk, not a folder literally named that). Every
+    *other* registered root — i.e. any ``jip:`` entry in ``extra_model_paths.yaml``
+    — is labelled "Extra Path: <disk path>" so the user can tell exactly where it
+    points (#23). Always returns at least the Comfy install root.
+
+    Earlier this only kept the first under-install root and dropped any others;
+    now only the root that *equals* the install root is "Comfy Install" and
+    everything else (including an extra path that happens to live under the
+    install) is surfaced as its own Extra Path.
     """
     base = os.path.realpath(comfy_root())
     comfy: dict | None = None
     extra: list[dict] = []
     for root in _registered_roots():
-        real = os.path.realpath(root)
-        if real == base or real.startswith(base + os.sep):
-            if comfy is None:
-                comfy = {"label": "Comfy Install", "path": root}
+        if os.path.realpath(root) == base and comfy is None:
+            comfy = {"label": "Comfy Install", "path": root}
         else:
-            extra.append({"label": "", "path": root})
+            extra.append({"path": root})
 
     entries: list[dict] = [comfy or {"label": "Comfy Install", "path": comfy_root()}]
-    for n, e in enumerate(extra, start=1):
-        e["label"] = f"Extra Path {n}"
+    for e in extra:
+        fwd = e["path"].replace("\\", "/").rstrip("/")
+        e["label"] = f"Extra Path: {fwd}"
         entries.append(e)
     for idx, e in enumerate(entries):
         e["index"] = idx

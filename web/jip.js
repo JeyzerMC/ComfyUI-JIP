@@ -43,10 +43,13 @@ function setupLoad(nodeType) {
         let roots = [];
         const fwd = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "");
         const rootByLabel = (label) => roots.find((r) => r.label === label);
+        // The readout shows the RESOLVED disk path of the selected root, not the
+        // label — so "Comfy Install" reads as the actual install folder on disk
+        // and an Extra Path reads as its real location (#23).
         const baseLabel = () => {
             const v = get("base_dir")?.value || "Comfy Install";
             const r = rootByLabel(v);
-            return `${v}: ${r ? fwd(r.path) : "(unknown)"}`;
+            return r ? fwd(r.path) : v;
         };
 
         // Consume toggle, styled like the CNet boxes, under the image (#20).
