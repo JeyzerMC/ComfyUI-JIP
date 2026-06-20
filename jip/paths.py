@@ -98,24 +98,18 @@ def resolve_base(base_dir: str) -> str:
     return roots[0]["path"]
 
 
-def build_output_path(base_dir: str, output_path: str, output_name: str, suffix: str) -> str:
-    """Absolute path for one output image, normalized."""
-    rel = output_name.strip().lstrip("/\\")
-    rel_path = (output_path or "").strip().strip("/\\")
-    full = os.path.join(resolve_base(base_dir), rel_path, f"{rel}{suffix}.png")
-    return os.path.normpath(full)
-
-
-def output_dir_and_stem(base_dir: str, output_path: str, output_name: str) -> tuple[str, str]:
+def output_dir_and_stem(output_path: str, output_name: str) -> tuple[str, str]:
     """Resolve the directory that holds a save and the file stem.
 
-    ``output_name`` may contain subfolders (e.g. ``jjba/josuke``): the subfolder
-    part joins the directory, the last segment is the stem.
+    The destination is ``output_path`` directly (#33): no install-root prefix —
+    ``output_path`` may be relative (to the working directory) or absolute (any
+    disk). ``output_name`` may contain subfolders (e.g. ``jjba/josuke``): the
+    subfolder part joins the directory, the last segment is the stem.
     """
     rel = output_name.strip().lstrip("/\\")
-    rel_path = (output_path or "").strip().strip("/\\")
     name_dir, stem = os.path.split(rel)
-    directory = os.path.normpath(os.path.join(resolve_base(base_dir), rel_path, name_dir))
+    base = (output_path or "").strip()
+    directory = os.path.normpath(os.path.join(base, name_dir))
     return directory, stem
 
 

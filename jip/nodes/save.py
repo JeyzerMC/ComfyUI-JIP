@@ -60,7 +60,7 @@ class JIPSave(io.ComfyNode):
         if not getattr(payload, "output_name", "").strip():
             raise ValueError("JIP Save: output_name is empty — set it on JIP Load.")
 
-        directory, stem = output_dir_and_stem(payload.base_root, payload.output_path, payload.output_name)
+        directory, stem = output_dir_and_stem(payload.output_path, payload.output_name)
         inc = next_increment(directory, stem)
         nnn = f"{inc:03d}"
 

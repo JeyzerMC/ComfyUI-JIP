@@ -13,7 +13,6 @@ import node_helpers
 from comfy_api.v0_0_2 import io, ui
 
 from ..payload import JIPPayload, JIPPayloadIO
-from ..paths import root_labels
 
 
 class JIPLoad(io.ComfyNode):
@@ -26,7 +25,7 @@ class JIPLoad(io.ComfyNode):
             node_id="JIPLoad",
             display_name="JIP Load",
             category="JIP",
-            description="Load a source image and set its output name, output path, and base directory.",
+            description="Load a source image and set its output name and output path. Saves go under the Comfy install root.",
             inputs=[
                 io.Combo.Input(
                     "image",
@@ -43,11 +42,6 @@ class JIPLoad(io.ComfyNode):
                 ),
                 io.String.Input("output_name", default="", tooltip="e.g. jjba/josuke"),
                 io.String.Input("output_path", default="input/cnets/"),
-                io.Combo.Input(
-                    "base_dir",
-                    options=root_labels(),
-                    tooltip="Destination root used by JIP Save: the Comfy install or an extra path (jip: entry in extra_model_paths.yaml).",
-                ),
             ],
             outputs=[
                 # The image travels inside the payload, so no separate image pin
@@ -63,13 +57,13 @@ class JIPLoad(io.ComfyNode):
         return True
 
     @classmethod
-    def fingerprint_inputs(cls, image: str, consume: bool, output_name: str, output_path: str, base_dir: str):
+    def fingerprint_inputs(cls, image: str, consume: bool, output_name: str, output_path: str):
         path = folder_paths.get_annotated_filepath(image)
         mtime = os.path.getmtime(path) if os.path.exists(path) else 0
-        return (image, mtime, consume, output_name, output_path, base_dir)
+        return (image, mtime, consume, output_name, output_path)
 
     @classmethod
-    def execute(cls, image: str, consume: bool, output_name: str, output_path: str, base_dir: str) -> io.NodeOutput:
+    def execute(cls, image: str, consume: bool, output_name: str, output_path: str) -> io.NodeOutput:
         image_path = folder_paths.get_annotated_filepath(image)
         img = node_helpers.pillow(Image.open, image_path)
         img = node_helpers.pillow(ImageOps.exif_transpose, img)
@@ -82,7 +76,8 @@ class JIPLoad(io.ComfyNode):
             images=[tensor],
             names=[""],
             dims=(width, height),
-            base_root=base_dir,
+            # base_root defaults to the Comfy install root (the base_dir field was
+            # removed — #33); JIP Save always writes under the install root.
             output_path=(output_path or "input/cnets/").strip(),
             output_name=output_name.strip(),
             consume=bool(consume),

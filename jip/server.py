@@ -33,9 +33,9 @@ async def _jip_reveal(request: web.Request) -> web.Response:
     """Open the OS file explorer at a saved image, selecting it when possible.
 
     The client posts the absolute ``path`` of a saved file (JIP Save ships it as
-    ``meta[i].path``). The path is confined server-side to the resolved JIP base
-    roots so an arbitrary path from the browser can't be opened (mirrors flakes'
-    ``/flakes/reveal``).
+    ``meta[i].path``). JIP Save writes under the user-chosen ``output_path``,
+    which can be anywhere on disk (#33), so the only check is that the path
+    points at an existing regular file.
     """
     try:
         body = await request.json()
@@ -46,19 +46,7 @@ async def _jip_reveal(request: web.Request) -> web.Response:
         return web.json_response({"error": "missing 'path'"}, status=400)
 
     real_target = os.path.realpath(path)
-
-    def _within(target: str, root: str) -> bool:
-        if target == root:
-            return True
-        try:
-            return os.path.commonpath([target, root]) == root
-        except ValueError:  # different drives on Windows
-            return False
-
-    roots = [os.path.realpath(e["path"]) for e in list_roots()]
-    if not any(_within(real_target, r) for r in roots):
-        return web.json_response({"error": "path escapes the JIP roots"}, status=400)
-    if not os.path.exists(real_target):
+    if not os.path.isfile(real_target):
         return web.json_response({"error": "file not found"}, status=404)
 
     try:

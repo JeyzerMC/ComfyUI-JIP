@@ -39,25 +39,13 @@ function setupLoad(nodeType) {
 
         const get = (name) => this.widgets?.find((w) => w.name === name);
 
-        // Real resolved base roots, fetched from the backend (#9, #19). Each is
-        // { index, label, path }. Until they arrive, fall back to the label name.
-        let roots = [];
-        const fwd = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "");
-        const rootByLabel = (label) => roots.find((r) => r.label === label);
-        // The readout shows the RESOLVED disk path of the selected root, not the
-        // label — so "Comfy Install" reads as the actual install folder on disk
-        // and an Extra Path reads as its real location (#23).
-        const baseLabel = () => {
-            const v = get("base_dir")?.value || "Comfy Install";
-            const r = rootByLabel(v);
-            return r ? fwd(r.path) : v;
-        };
-
         // Consume row (label + toggle switch), placed directly under the image
         // widget and above output_name (#24).
         makeToggleBox(this, "consume", "Consume", "image");
 
-        // Plain grey label showing the full output path, no field-name (#10).
+        // Plain grey label showing the destination, no field-name (#10). The
+        // base_dir field was removed (#33): the destination is output_path +
+        // output_name directly (output_path may be relative or absolute).
         const labelEl = document.createElement("div");
         labelEl.style.cssText = "padding:3px 8px;font-size:10px;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box;";
         const labelWidget = this.addDOMWidget("output_path_label", "div", labelEl, { serialize: false });
@@ -65,14 +53,14 @@ function setupLoad(nodeType) {
 
         const refresh = () => {
             const name = (get("output_name")?.value || "").trim();
-            const path = (get("output_path")?.value || "cnets/").trim().replace(/^\/+|\/+$/g, "");
-            const full = `${baseLabel()}/${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
+            const path = (get("output_path")?.value || "input/cnets/").trim().replace(/\/+$/, "");
+            const full = `${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
             labelEl.textContent = full;
             labelEl.title = full;
             app.graph?.setDirtyCanvas(true, false);
         };
 
-        for (const n of ["output_name", "output_path", "base_dir"]) {
+        for (const n of ["output_name", "output_path"]) {
             const w = get(n);
             if (!w) continue;
             const cb = w.callback;
@@ -82,22 +70,6 @@ function setupLoad(nodeType) {
                 return res;
             };
         }
-
-        // Pull the real base roots and rebuild the base_dir options from them so
-        // any configured Extra Path appears, and only configured ones do (#9, #19).
-        fetch("/jip/roots", { cache: "no-store" })
-            .then((r) => r.json())
-            .then((d) => {
-                roots = (d && d.roots) || [];
-                const labels = roots.map((r) => r.label);
-                const bw = get("base_dir");
-                if (bw && labels.length) {
-                    if (bw.options && Array.isArray(bw.options.values)) bw.options.values = labels;
-                    if (!labels.includes(bw.value)) bw.value = labels[0];
-                }
-                refresh();
-            })
-            .catch(() => {});
 
         refresh();
         return r;
