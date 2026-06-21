@@ -41,20 +41,30 @@ async function openResize(detail) {
     canvas.style.cssText = "background:#111;border:1px solid #333;border-radius:4px;touch-action:none;display:block;";
     const ctx = canvas.getContext("2d");
 
-    const MIN = 8; // minimum rectangle size in (effective) image px
+    const MIN = 8;       // minimum rectangle size in (effective) image px
+    const MAX = 8192;    // upper bound for dimensions / coordinates (#36)
 
-    // Start rect = node dims (clamped to the image), centered.
-    let rw = clamp(default_w, MIN, iw), rh = clamp(default_h, MIN, ih);
+    // Start rect = node dims, centered. May exceed the image (#36).
+    let rw = clamp(default_w, MIN, MAX), rh = clamp(default_h, MIN, MAX);
     let rect = { x: (iw - rw) / 2, y: (ih - rh) / 2, w: rw, h: rh };
+
+    // View offset: the virtual canvas spans the union of the image and the
+    // rectangle, so an outline dragged beyond the image stays visible (#36).
+    let viewMinX = 0, viewMinY = 0;
 
     let mode = "crop"; // "crop" | "fit"
 
     const recomputeDisplay = () => {
+        // Virtual area = union of the image [0,0,iw,ih] and the rectangle (#36).
+        viewMinX = Math.min(0, rect.x);
+        viewMinY = Math.min(0, rect.y);
+        const vw = Math.max(iw, rect.x + rect.w) - viewMinX;
+        const vh = Math.max(ih, rect.y + rect.h) - viewMinY;
         const maxW = Math.min(window.innerWidth * 0.7, 900);
         const maxH = window.innerHeight * 0.56;
-        scale = Math.min(maxW / iw, maxH / ih, 1);
-        dispW = Math.max(1, Math.round(iw * scale));
-        dispH = Math.max(1, Math.round(ih * scale));
+        scale = Math.min(maxW / vw, maxH / vh, 1);
+        dispW = Math.max(1, Math.round(vw * scale));
+        dispH = Math.max(1, Math.round(vh * scale));
         canvas.width = dispW; canvas.height = dispH;
     };
     recomputeDisplay();
@@ -63,19 +73,24 @@ async function openResize(detail) {
 
     const toImg = (e) => {
         const r = canvas.getBoundingClientRect();
-        return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale];
+        return [(e.clientX - r.left) / scale + viewMinX, (e.clientY - r.top) / scale + viewMinY];
     };
 
     const redraw = () => {
+        recomputeDisplay();
         ctx.clearRect(0, 0, dispW, dispH);
-        const rx = rect.x * scale, ry = rect.y * scale, rw2 = rect.w * scale, rh2 = rect.h * scale;
+        const ix = (0 - viewMinX) * scale, iy = (0 - viewMinY) * scale;
+        const iwD = iw * scale, ihD = ih * scale;
+        const rx = (rect.x - viewMinX) * scale, ry = (rect.y - viewMinY) * scale, rw2 = rect.w * scale, rh2 = rect.h * scale;
         if (mode === "fit") {
             // Preview the stretch: the whole image squeezed into the rectangle box.
             ctx.fillStyle = "#000";
             ctx.fillRect(0, 0, dispW, dispH);
             ctx.drawImage(img, 0, 0, iw0, ih0, rx, ry, rw2, rh2);
         } else {
-            ctx.drawImage(img, 0, 0, iw0, ih0, 0, 0, dispW, dispH);
+            ctx.fillStyle = "#111";
+            ctx.fillRect(0, 0, dispW, dispH);
+            ctx.drawImage(img, 0, 0, iw0, ih0, ix, iy, iwD, ihD);
             // dim outside the rectangle
             ctx.fillStyle = "rgba(0,0,0,0.5)";
             ctx.fillRect(0, 0, dispW, ry);
@@ -119,18 +134,20 @@ async function openResize(detail) {
     const CURSORS = { tl: "nwse-resize", br: "nwse-resize", tr: "nesw-resize", bl: "nesw-resize", t: "ns-resize", b: "ns-resize", l: "ew-resize", r: "ew-resize", move: "move" };
 
     // Apply a drag for the active handle, keeping the opposite side(s) fixed.
+    // The rectangle is free to extend past the image bounds (#36); only MIN/MAX
+    // and a generous coordinate range constrain it.
     const applyDrag = (handle, x, y, orig, start) => {
         if (handle === "move") {
-            rect.x = clamp(orig.x + (x - start.x), 0, iw - rect.w);
-            rect.y = clamp(orig.y + (y - start.y), 0, ih - rect.h);
+            rect.x = clamp(orig.x + (x - start.x), -MAX, MAX);
+            rect.y = clamp(orig.y + (y - start.y), -MAX, MAX);
             return;
         }
         let { x: nx, y: ny, w: nw, h: nh } = orig;
         const right = orig.x + orig.w, bottom = orig.y + orig.h;
-        if (handle.includes("l")) { nx = clamp(x, 0, right - MIN); nw = right - nx; }
-        if (handle.includes("r")) { nw = clamp(x, orig.x + MIN, iw) - orig.x; nx = orig.x; }
-        if (handle.includes("t")) { ny = clamp(y, 0, bottom - MIN); nh = bottom - ny; }
-        if (handle.includes("b")) { nh = clamp(y, orig.y + MIN, ih) - orig.y; ny = orig.y; }
+        if (handle.includes("l")) { nx = clamp(x, -MAX, right - MIN); nw = right - nx; }
+        if (handle.includes("r")) { nw = clamp(x, orig.x + MIN, orig.x + MAX) - orig.x; nx = orig.x; }
+        if (handle.includes("t")) { ny = clamp(y, -MAX, bottom - MIN); nh = bottom - ny; }
+        if (handle.includes("b")) { nh = clamp(y, orig.y + MIN, orig.y + MAX) - orig.y; ny = orig.y; }
         rect = { x: nx, y: ny, w: nw, h: nh };
     };
 
@@ -176,11 +193,9 @@ async function openResize(detail) {
         imgScale = next;
         iw = Math.max(1, Math.round(iw0 * imgScale));
         ih = Math.max(1, Math.round(ih0 * imgScale));
-        // scale the rectangle with the image, then re-clamp to the new bounds
+        // scale the rectangle with the image; it may extend past the image (#36).
         rect = { x: rect.x * ratio, y: rect.y * ratio, w: rect.w * ratio, h: rect.h * ratio };
-        rect.w = clamp(rect.w, MIN, iw); rect.h = clamp(rect.h, MIN, ih);
-        rect.x = clamp(rect.x, 0, iw - rect.w); rect.y = clamp(rect.y, 0, ih - rect.h);
-        recomputeDisplay();
+        rect.w = clamp(rect.w, MIN, MAX); rect.h = clamp(rect.h, MIN, MAX);
         syncScaleLabel(); syncFields(); redraw();
     });
     const scaleGroup = document.createElement("div");
@@ -198,11 +213,10 @@ async function openResize(detail) {
     const hIn = dimInput(Math.round(rect.h));
     const syncFields = () => { wIn.value = String(Math.round(rect.w)); hIn.value = String(Math.round(rect.h)); };
     const applyField = () => {
-        const w = clamp(parseInt(wIn.value, 10) || rect.w, MIN, iw);
-        const h = clamp(parseInt(hIn.value, 10) || rect.h, MIN, ih);
+        // Allow outline dimensions larger than the image (#36).
+        const w = clamp(parseInt(wIn.value, 10) || rect.w, MIN, MAX);
+        const h = clamp(parseInt(hIn.value, 10) || rect.h, MIN, MAX);
         rect.w = w; rect.h = h;
-        rect.x = clamp(rect.x, 0, iw - w);
-        rect.y = clamp(rect.y, 0, ih - h);
         syncFields(); redraw();
     };
     wIn.addEventListener("change", applyField);
@@ -269,11 +283,11 @@ async function openResize(detail) {
             // stretch the whole (natural) image to the output dims (aspect ignored)
             octx.drawImage(img, 0, 0, iw0, ih0, 0, 0, outW, outH);
         } else {
-            // crop: map the rectangle (effective px) back to natural source px,
-            // then output at the rectangle's (scaled) pixel size
-            const sx = rect.x / imgScale, sy = rect.y / imgScale;
-            const sw = rect.w / imgScale, sh = rect.h / imgScale;
-            octx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+            // crop: place the effective-size image into the output at its offset
+            // relative to the rectangle. When the rectangle extends past the image
+            // (#36) the uncovered area keeps the white fill (padding); output px
+            // map 1:1 to effective px so -rect.x/-rect.y is the placement.
+            octx.drawImage(img, 0, 0, iw0, ih0, -rect.x, -rect.y, iw, ih);
         }
         return out.toDataURL("image/png");
     }
