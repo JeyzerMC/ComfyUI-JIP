@@ -90,13 +90,17 @@ class JIPRMBG(io.ComfyNode):
 
         # Pause: let the user pick one result and retouch it. The overlay returns
         # the final image (base64 PNG), which becomes the working/_alt image.
+        # Prepend the source image (index 0) so the overlay can offer it as the
+        # "Original" (no-removal) choice and as the Restore brush source (#35).
+        overlay_images = [src] + results
+        overlay_labels = ["Original"] + labels
         result = interactive.request(
             "rmbg",
-            results,
-            extra={"labels": labels, "background": background, "bg_color": list(bg_rgb)},
+            overlay_images,
+            extra={"labels": overlay_labels, "base_index": 0, "background": background, "bg_color": list(bg_rgb)},
         )
         edited = result.get("image")
-        alt = interactive.decode_image(edited) if edited else results[int(result.get("picked", 0))]
+        alt = interactive.decode_image(edited) if edited else overlay_images[int(result.get("picked", 0))]
 
         out = payload.copy()
         out.set_working(alt)
