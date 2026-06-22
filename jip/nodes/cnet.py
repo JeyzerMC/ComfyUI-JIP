@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 
 import torch
+import torch.nn.functional as F
 
 from comfy_api.v0_0_2 import io
 
@@ -89,6 +90,21 @@ def _unwrap_image(result):
     return result
 
 
+def _resize_to(image, height: int, width: int):
+    """Resample a ``[1,H,W,C]`` image tensor to ``(height, width)``, clamped to [0,1].
+
+    controlnet_aux preprocessors size their output by the ``resolution`` arg (the
+    shortest edge), so the result doesn't keep the JIP Resize dimensions. Forcing
+    the appended output back to the working image's W x H fixes that (#39). A
+    no-op when the dimensions already match, to avoid needless resampling.
+    """
+    if int(image.shape[1]) == height and int(image.shape[2]) == width:
+        return image
+    chw = image.permute(0, 3, 1, 2)  # [1,C,H,W] for interpolate
+    chw = F.interpolate(chw, size=(height, width), mode="bilinear", align_corners=False)
+    return chw.permute(0, 2, 3, 1).clamp(0, 1).contiguous()
+
+
 def _working_image(payload):
     """The image preprocessors run on: the edited '_alt' entry if present, else base."""
     for img, nm in zip(payload.images, getattr(payload, "names", [])):
@@ -151,6 +167,9 @@ class JIPCNetPreprocess(io.ComfyNode):
             if not isinstance(image, torch.Tensor):
                 print(f"[JIP] preprocessor {label} returned no image tensor — skipping")
                 continue
+            # Keep the JIP Resize (working image) dimensions, not the preprocessor's
+            # resolution-derived size (#39).
+            image = _resize_to(image, int(src.shape[1]), int(src.shape[2]))
             out.images.append(image)
             out.names.append(f"_{label.lower()}")
 
