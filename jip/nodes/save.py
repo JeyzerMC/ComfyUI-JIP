@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 
@@ -78,16 +79,25 @@ class JIPSave(io.ComfyNode):
                 print(f"[JIP] failed to save {dest}: {exc}")
         print(f"[JIP] saved {saved}/{len(roles)} image(s) under {os.path.abspath(directory)} (increment {nnn})")
 
-        # Consume: move (not copy) the source — only after EVERY role wrote cleanly,
-        # so a partial/failed save never deletes the original (#20).
-        if getattr(payload, "consume", False) and saved == len(roles):
-            src = getattr(payload, "source_path", "") or ""
-            if src and os.path.isfile(src):
+        # Consume: move (not copy) the source — delete it only after EVERY role
+        # wrote cleanly, so a partial/failed save never deletes the original (#20).
+        # Every skip/failure branch is logged so a "copied not moved" symptom is
+        # diagnosable instead of silent (#37).
+        if getattr(payload, "consume", False):
+            src = os.path.realpath(getattr(payload, "source_path", "") or "")
+            if saved != len(roles):
+                logging.warning(
+                    "[JIP] consume skipped: only %d/%d roles saved — source kept: %s",
+                    saved, len(roles), src,
+                )
+            elif src and os.path.isfile(src):
                 try:
                     os.remove(src)
                     print(f"[JIP] consumed source image (moved): {src}")
                 except Exception as exc:
-                    print(f"[JIP] consume failed to delete {src}: {exc}")
+                    logging.warning("[JIP] consume could not delete source %s: %r", src, exc)
+            elif src:
+                logging.warning("[JIP] consume: source no longer exists, nothing to move: %s", src)
 
         if not written:
             return io.NodeOutput()

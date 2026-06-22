@@ -64,13 +64,17 @@ class JIPLoad(io.ComfyNode):
 
     @classmethod
     def execute(cls, image: str, consume: bool, output_name: str, output_path: str) -> io.NodeOutput:
-        image_path = folder_paths.get_annotated_filepath(image)
-        img = node_helpers.pillow(Image.open, image_path)
-        img = node_helpers.pillow(ImageOps.exif_transpose, img)
-        rgb = img.convert("RGB")
-        arr = np.array(rgb).astype(np.float32) / 255.0
+        image_path = os.path.realpath(folder_paths.get_annotated_filepath(image))
+        # Read the pixels inside a context manager so the source file handle is
+        # released before the payload travels downstream. A lingering handle
+        # blocks consume's os.remove on Windows, which made external-drive
+        # sources look "copied not moved" rather than moved (#37).
+        with node_helpers.pillow(Image.open, image_path) as opened:
+            img = node_helpers.pillow(ImageOps.exif_transpose, opened)
+            rgb = img.convert("RGB")
+            arr = np.array(rgb).astype(np.float32) / 255.0
+            width, height = rgb.size
         tensor = torch.from_numpy(arr)[None,]
-        width, height = rgb.size
 
         payload = JIPPayload(
             images=[tensor],
