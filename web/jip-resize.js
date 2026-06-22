@@ -1,7 +1,8 @@
 // JIP Resize overlay (#26, #34): a freely resizable outline rectangle over the
 // image (centered), with a uniform image-scale slider.
 //   - Scale slider (left): uniformly resamples the source image, updating the
-//     effective image dimensions; the outline scales with it.
+//     effective image dimensions; the outline keeps its dimensions and stays
+//     centered on the image (a zoom inside a constant-size crop frame) (#38).
 //   - The rectangle starts at the node's per-orientation dims (default_w/h),
 //     centered, clamped to the image. Drag the body to move, an edge to change
 //     one dimension, a corner to change both (no aspect lock).
@@ -189,13 +190,14 @@ async function openResize(detail) {
     const syncScaleLabel = () => { scaleLabel.textContent = `Scale ${Math.round(imgScale * 100)}% · ${iw}×${ih}`; };
     scaleSlider.addEventListener("input", () => {
         const next = Math.max(0.05, (+scaleSlider.value) / 100);
-        const ratio = next / imgScale;
         imgScale = next;
         iw = Math.max(1, Math.round(iw0 * imgScale));
         ih = Math.max(1, Math.round(ih0 * imgScale));
-        // scale the rectangle with the image; it may extend past the image (#36).
-        rect = { x: rect.x * ratio, y: rect.y * ratio, w: rect.w * ratio, h: rect.h * ratio };
-        rect.w = clamp(rect.w, MIN, MAX); rect.h = clamp(rect.h, MIN, MAX);
+        // Scale the image only — the outline keeps its dimensions and stays
+        // centered on the image, so the slider zooms the image inside a
+        // constant-size crop frame (center crop) (#38).
+        rect.x = (iw - rect.w) / 2;
+        rect.y = (ih - rect.h) / 2;
         syncScaleLabel(); syncFields(); redraw();
     });
     const scaleGroup = document.createElement("div");
@@ -251,7 +253,7 @@ async function openResize(detail) {
     bottomRow.append(scaleGroup, dimsCenter, buttons);
 
     const hint = document.createElement("div");
-    hint.textContent = "Scale the image with the slider. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit stretches the whole image to the W x H; Crop crops to the rectangle.";
+    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size). Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit stretches the whole image to the W x H; Crop crops to the rectangle.";
     hint.style.cssText = "font-size:11px;color:#888;margin-top:6px;";
 
     modal.body.append(canvasWrap, bottomRow, hint);
