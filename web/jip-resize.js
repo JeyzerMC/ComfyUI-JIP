@@ -188,21 +188,27 @@ async function openResize(detail) {
     scaleSlider.type = "range"; scaleSlider.min = "25"; scaleSlider.max = "400"; scaleSlider.step = "1"; scaleSlider.value = "100";
     scaleSlider.style.cssText = "width:120px;vertical-align:middle;";
     const syncScaleLabel = () => { scaleLabel.textContent = `Scale ${Math.round(imgScale * 100)}% · ${iw}×${ih}`; };
-    scaleSlider.addEventListener("input", () => {
-        const next = Math.max(0.05, (+scaleSlider.value) / 100);
-        imgScale = next;
+    // Apply a uniform image scale (bounded to the slider's 25–400% range). The
+    // outline keeps its dimensions and stays centered on the image, so scaling
+    // zooms the image inside a constant-size crop frame (center crop) (#38).
+    const applyScale = (next) => {
+        imgScale = clamp(next, 0.25, 4);
         iw = Math.max(1, Math.round(iw0 * imgScale));
         ih = Math.max(1, Math.round(ih0 * imgScale));
-        // Scale the image only — the outline keeps its dimensions and stays
-        // centered on the image, so the slider zooms the image inside a
-        // constant-size crop frame (center crop) (#38).
         rect.x = (iw - rect.w) / 2;
         rect.y = (ih - rect.h) / 2;
+        scaleSlider.value = String(Math.round(imgScale * 100));
         syncScaleLabel(); syncFields(); redraw();
-    });
+    };
+    scaleSlider.addEventListener("input", () => applyScale((+scaleSlider.value) / 100));
+    // Fit the image to the outline's width / height respectively (#41).
+    const fitWBtn = button("Fit W");
+    const fitHBtn = button("Fit H");
+    fitWBtn.addEventListener("click", () => applyScale(rect.w / iw0));
+    fitHBtn.addEventListener("click", () => applyScale(rect.h / ih0));
     const scaleGroup = document.createElement("div");
     scaleGroup.style.cssText = "display:flex;align-items:center;gap:8px;";
-    scaleGroup.append(scaleSlider, scaleLabel);
+    scaleGroup.append(scaleSlider, scaleLabel, fitWBtn, fitHBtn);
 
     // W/H fields — match the buttons' height/font, 20% wider than before (#34).
     const dimInput = (val) => {
@@ -253,7 +259,7 @@ async function openResize(detail) {
     bottomRow.append(scaleGroup, dimsCenter, buttons);
 
     const hint = document.createElement("div");
-    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size). Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit stretches the whole image to the W x H; Crop crops to the rectangle.";
+    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size); Fit W / Fit H scale it to the outline's width / height. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit to outline stretches the whole image to the W x H; Crop crops to the rectangle.";
     hint.style.cssText = "font-size:11px;color:#888;margin-top:6px;";
 
     modal.body.append(canvasWrap, bottomRow, hint);
