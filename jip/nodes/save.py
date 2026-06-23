@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import uuid
 
 import numpy as np
@@ -79,25 +80,37 @@ class JIPSave(io.ComfyNode):
                 print(f"[JIP] failed to save {dest}: {exc}")
         print(f"[JIP] saved {saved}/{len(roles)} image(s) under {os.path.abspath(directory)} (increment {nnn})")
 
-        # Consume: move (not copy) the source — delete it only after EVERY role
-        # wrote cleanly, so a partial/failed save never deletes the original (#20).
-        # Every skip/failure branch is logged so a "copied not moved" symptom is
-        # diagnosable instead of silent (#37).
+        # Consume: MOVE the source into the save output directory (copy + unlink,
+        # cross-device safe via shutil.move) — only after EVERY role wrote cleanly,
+        # so a partial save never deletes the original (#20, #37, #40). Logged
+        # loudly and unconditionally so a "copied not moved" symptom is never
+        # silent: the exact source path, existence, and outcome are always shown.
         if getattr(payload, "consume", False):
             src = os.path.realpath(getattr(payload, "source_path", "") or "")
+            logging.info(
+                "[JIP] consume on — source=%s exists=%s saved=%d/%d",
+                src, (os.path.isfile(src) if src else False), saved, len(roles),
+            )
             if saved != len(roles):
                 logging.warning(
                     "[JIP] consume skipped: only %d/%d roles saved — source kept: %s",
                     saved, len(roles), src,
                 )
             elif src and os.path.isfile(src):
+                dest = os.path.join(directory, os.path.basename(src))
+                # Don't clobber a just-written role file or collide on name.
+                if os.path.realpath(dest) == src or os.path.exists(dest):
+                    stem_, ext_ = os.path.splitext(os.path.basename(src))
+                    dest = os.path.join(directory, f"{stem_}_source{ext_}")
                 try:
-                    os.remove(src)
-                    print(f"[JIP] consumed source image (moved): {src}")
+                    shutil.move(src, dest)
+                    print(f"[JIP] consumed source image (moved): {src} -> {dest}")
                 except Exception as exc:
-                    logging.warning("[JIP] consume could not delete source %s: %r", src, exc)
+                    logging.warning("[JIP] consume could not move source %s -> %s: %r", src, dest, exc)
             elif src:
                 logging.warning("[JIP] consume: source no longer exists, nothing to move: %s", src)
+            else:
+                logging.warning("[JIP] consume on but source_path is empty — nothing to move")
 
         if not written:
             return io.NodeOutput()
