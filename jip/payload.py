@@ -26,7 +26,8 @@ class JIPPayload:
     base_root: str = "Comfy Install"
     output_path: str = "cnets/"
     output_name: str = ""
-    # When True, JIP Save deletes the source input file after a successful save (#20).
+    # When True, JIP Save deletes the source input file from disk after a
+    # successful save — os.remove, no copy into the output dir (#20, #42).
     consume: bool = False
     # Absolute path of the source image from JIP Load (for consume).
     source_path: str = ""

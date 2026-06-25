@@ -1,5 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { initInteractive } from "./jip-overlay.js";
+import { addBrowseToLoad } from "./jip-browse.js";  // custom on-disk source picker (#42)
 import "./jip-rmbg.js";     // registers the "rmbg" overlay handler (#11)
 import "./jip-resize.js";   // registers the "resize" overlay handler (#12)
 
@@ -39,9 +40,14 @@ function setupLoad(nodeType) {
 
         const get = (name) => this.widgets?.find((w) => w.name === name);
 
-        // Consume row (label + toggle switch), placed directly under the image
-        // widget and above output_name (#24).
-        makeToggleBox(this, "consume", "Consume", "image");
+        // Custom on-disk source picker: a Browse button under the image_path
+        // field that opens the folder overlay and writes the chosen absolute
+        // path back into the widget (#42).
+        addBrowseToLoad(this);
+
+        // Consume row (label + toggle switch). Built without auto-placement;
+        // the explicit ordering below seats it directly above output_name (#24).
+        makeToggleBox(this, "consume", "Consume");
 
         // Plain grey label showing the destination, no field-name (#10). The
         // base_dir field was removed (#33): the destination is output_path +
@@ -51,9 +57,13 @@ function setupLoad(nodeType) {
         const labelWidget = this.addDOMWidget("output_path_label", "div", labelEl, { serialize: false });
         labelWidget.computeSize = () => [this.size[0], 18];
 
+        // Widget values can be non-strings on graphs saved by an older node
+        // version (shifted widget order). Coerce before trimming so a stray
+        // boolean/number never throws and aborts the whole workflow load (#42).
+        const asStr = (v) => (typeof v === "string" ? v : "");
         const refresh = () => {
-            const name = (get("output_name")?.value || "").trim();
-            const path = (get("output_path")?.value || "input/cnets/").trim().replace(/\/+$/, "");
+            const name = asStr(get("output_name")?.value).trim();
+            const path = (asStr(get("output_path")?.value) || "input/cnets/").trim().replace(/\/+$/, "");
             const full = `${path}/${name || "<name>"}.png`.replace(/\/{2,}/g, "/");
             labelEl.textContent = full;
             labelEl.title = full;
@@ -72,6 +82,24 @@ function setupLoad(nodeType) {
         }
 
         refresh();
+
+        // Final on-node widget order (#42). The native (hidden) `consume`
+        // boolean is left out of this list so it falls to the end and never
+        // opens a gap between the Consume toggle and output_name.
+        const desired = [
+            "image_path", "jip_browse_btn", "jip_selected_preview",
+            "consume_box", "output_name", "output_path", "output_path_label",
+        ];
+        const byName = new Map();
+        for (const w of this.widgets) if (!byName.has(w.name)) byName.set(w.name, w);
+        const ordered = [];
+        for (const n of desired) {
+            const w = byName.get(n);
+            if (w) { ordered.push(w); byName.delete(n); }
+        }
+        for (const w of this.widgets) if (byName.has(w.name)) { ordered.push(w); byName.delete(w.name); }
+        this.widgets = ordered;
+
         return r;
     };
 }
@@ -268,7 +296,14 @@ function makeToggleBox(node, widgetName, label, afterName) {
     row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;box-sizing:border-box;cursor:pointer;user-select:none;";
     const lbl = document.createElement("span");
     lbl.textContent = label;
-    lbl.style.cssText = "font-size:12px;color:#cfcfcf;";
+    // Match the native widget labels (output_name / output_path) so the toggle
+    // row reads as one of them: same secondary text color, size and font that
+    // litegraph draws widget names with, read from the active theme (#42).
+    const LG = window.LiteGraph || {};
+    const labelColor = LG.WIDGET_SECONDARY_TEXT_COLOR || "#b0b0b8";
+    const labelSize = LG.NODE_TEXT_SIZE || 14;
+    const labelFont = LG.NODE_TEXT_FONT || "Arial, sans-serif";
+    lbl.style.cssText = `font-size:${labelSize}px;color:${labelColor};font-family:${labelFont};`;
     if (w.tooltip) row.title = w.tooltip;
 
     const sw = document.createElement("div");
