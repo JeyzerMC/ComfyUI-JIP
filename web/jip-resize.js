@@ -23,6 +23,9 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 async function openResize(detail) {
     const { token, images = [], default_w = 512, default_h = 512, orientation = "" } = detail;
+    // Short / long side from the node's S / L (#43); derived when absent.
+    const S = detail.short ?? Math.min(default_w, default_h);
+    const L = detail.long ?? Math.max(default_w, default_h);
     if (!images.length) { cancelToken(token); return; }
 
     const modal = createModal(`JIP Resize — ${orientation}`);
@@ -219,7 +222,7 @@ async function openResize(detail) {
     };
     const wIn = dimInput(Math.round(rect.w));
     const hIn = dimInput(Math.round(rect.h));
-    const syncFields = () => { wIn.value = String(Math.round(rect.w)); hIn.value = String(Math.round(rect.h)); };
+    const syncFields = () => { wIn.value = String(Math.round(rect.w)); hIn.value = String(Math.round(rect.h)); syncPresets(); };
     const applyField = () => {
         // Allow outline dimensions larger than the image (#36).
         const w = clamp(parseInt(wIn.value, 10) || rect.w, MIN, MAX);
@@ -258,11 +261,40 @@ async function openResize(detail) {
     bottomRow.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;";
     bottomRow.append(scaleGroup, dimsCenter, buttons);
 
+    // Crop presets (#44): exclusive toggles that set the outline size, centered
+    // on the image. The lit one is whichever matches the current outline, so a
+    // drag or typed size that matches none clears it.
+    const PRESETS = [
+        ["P", "Portrait: S × L", S, L],
+        ["L", "Landscape: L × S", L, S],
+        ["H", "Half screen: 2S × L", 2 * S, L],
+        ["S", "Square: S × S", S, S],
+    ];
+    const presetRow = document.createElement("div");
+    presetRow.style.cssText = "display:flex;justify-content:center;gap:4px;margin-top:6px;";
+    const presetButtons = PRESETS.map(([label, title, w, h]) => {
+        const b = button(label);
+        b.title = title;
+        b.style.minWidth = "36px";
+        b.addEventListener("click", () => {
+            rect.w = clamp(w, MIN, MAX); rect.h = clamp(h, MIN, MAX);
+            rect.x = (iw - rect.w) / 2; rect.y = (ih - rect.h) / 2;
+            syncFields(); redraw();
+        });
+        presetRow.appendChild(b);
+        return [b, w, h];
+    });
+    function syncPresets() {
+        for (const [b, w, h] of presetButtons) {
+            b.style.borderColor = Math.round(rect.w) === w && Math.round(rect.h) === h ? "#4a9eff" : "#555";
+        }
+    }
+
     const hint = document.createElement("div");
-    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size); Fit W / Fit H scale it to the outline's width / height. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. Fit to outline stretches the whole image to the W x H; Crop crops to the rectangle.";
+    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size); Fit W / Fit H scale it to the outline's width / height. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. P / L / H / S set the outline to portrait, landscape, half screen or square from the node's S and L. Fit to outline stretches the whole image to the W x H; Crop crops to the rectangle.";
     hint.style.cssText = "font-size:11px;color:#888;margin-top:6px;";
 
-    modal.body.append(canvasWrap, bottomRow, hint);
+    modal.body.append(canvasWrap, bottomRow, presetRow, hint);
 
     // ── footer ──
     const cancelBtn = button("Cancel");
