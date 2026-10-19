@@ -19,7 +19,7 @@ you don't need background removal, etc.
 |---|---|
 | **JIP Load** | Select a source image; set `output_name`, `output_path` (default `input/cnets/`), and base directory. `Consume` moves the source (deleted after a successful save) instead of copying. Emits the payload. |
 | **JIP RMBG** | Multi-select background-removal models (`rembg` / U²-Net). Runs every selected model, **pauses**, and an overlay lets you pick one result and retouch it (eraser + magic-fill to the background colour). The confirmed image becomes the working/`_alt` image. |
-| **JIP Resize** | Carries only Portrait/Landscape default dims. On run it **pauses** and a crop/resize overlay draws an outline at the default dims for the image's orientation, offering fit-to-outline, crop-to-outline (aspect-locked drag), and stretch. |
+| **JIP Resize** | Carries only the short and long side (**S** / **L** sliders). On run it **pauses** and a crop/resize overlay draws an outline at S×L for a portrait image (L×S for landscape), offering fit-to-outline, crop-to-outline, and stretch. |
 | **JIP CNet Preprocess** | Run selected controlnet preprocessors (DepthAnythingV2, DWPose, HED, DensePose, CannyEdge, LineArt; Manga2Anime/OpenPose off by default) via `comfyui_controlnet_aux`; appends one suffixed image each. |
 | **JIP Save** | Write the role images (cover/base/prep + one per preprocessor) under `<base>/<output_path>/` with a collision-safe increment, and show a labelled grid (filename + full path on hover + dims). |
 

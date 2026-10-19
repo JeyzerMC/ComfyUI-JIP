@@ -1,9 +1,9 @@
 """JIP Resize node — interactive crop/resize overlay (#4, #12).
 
-The node carries only the per-orientation default dimensions (Portrait W/H,
-Landscape W/H). On run it pauses and the frontend opens an overlay: it draws an
-outline at the default dims for the image's orientation and offers fit-to-outline,
-crop-to-outline, manual crop, or stretch. The confirmed image (always at the
+The node carries only the short and long side (S / L, #43). On run it pauses and
+the frontend opens an overlay: it draws an outline at S x L for a portrait image
+(L x S for landscape) and offers fit-to-outline, crop-to-outline, manual crop, or
+stretch. The confirmed image (always at the
 chosen output dims) becomes the payload's working/_alt image. No on-node preview.
 """
 
@@ -26,11 +26,11 @@ class JIPResize(io.ComfyNode):
             inputs=[
                 JIPPayloadIO.Input("payload"),
                 # Dimension fields, not input pins (#25): socketless so only the
-                # payload is a pin; the frontend lays these out as a 2x2 grid.
-                io.Int.Input("portrait_width", default=853, min=1, max=8192, socketless=True),
-                io.Int.Input("portrait_height", default=1440, min=1, max=8192, socketless=True),
-                io.Int.Input("landscape_width", default=1440, min=1, max=8192, socketless=True),
-                io.Int.Input("landscape_height", default=853, min=1, max=8192, socketless=True),
+                # payload is a pin.
+                io.Int.Input("short_side", display_name="S", default=853, min=1, max=8192, socketless=True,
+                             tooltip="Short side: the width of a portrait image, the height of a landscape one."),
+                io.Int.Input("long_side", display_name="L", default=1440, min=1, max=8192, socketless=True,
+                             tooltip="Long side: the height of a portrait image, the width of a landscape one."),
             ],
             outputs=[
                 JIPPayloadIO.Output("payload"),
@@ -38,8 +38,7 @@ class JIPResize(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, payload, portrait_width: int, portrait_height: int,
-                landscape_width: int, landscape_height: int) -> io.NodeOutput:
+    def execute(cls, payload, short_side: int, long_side: int) -> io.NodeOutput:
         if payload is None or not getattr(payload, "images", None):
             raise ValueError("JIP Resize: payload has no images (connect JIP Load).")
 
@@ -47,7 +46,7 @@ class JIPResize(io.ComfyNode):
         # tensor is [1, H, W, C]
         h, w = int(src.shape[1]), int(src.shape[2])
         portrait = h > w
-        out_w, out_h = (portrait_width, portrait_height) if portrait else (landscape_width, landscape_height)
+        out_w, out_h = (short_side, long_side) if portrait else (long_side, short_side)
 
         result = interactive.request(
             "resize",
@@ -56,6 +55,8 @@ class JIPResize(io.ComfyNode):
                 "orientation": "portrait" if portrait else "landscape",
                 "default_w": int(out_w),
                 "default_h": int(out_h),
+                "short": int(short_side),
+                "long": int(long_side),
             },
         )
         edited = result.get("image")
