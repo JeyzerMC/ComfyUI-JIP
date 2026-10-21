@@ -67,16 +67,20 @@ async function openRmbg(detail) {
     const undo = () => { if (hindex > 0) { hindex--; restoreHist(); updateUndoButtons(); } };
     const redo = () => { if (hindex < history.length - 1) { hindex++; restoreHist(); updateUndoButtons(); } };
 
-    let selected = 0;
+    // Per-result {history, hindex}, so switching preset keeps manual edits (#46).
+    const states = new Map();
+    let selected = -1;
     const loadInto = (i) => {
+        if (selected >= 0) states.set(selected, { history, hindex });
         selected = i;
         const im = imgs[i];
         canvas.width = im.naturalWidth;
         canvas.height = im.naturalHeight;
-        ctx.drawImage(im, 0, 0);
         thumbs.forEach((t, k) => { t.style.outline = k === i ? "2px solid #4a9eff" : "2px solid transparent"; });
         computeFit(); applyZoom();
-        resetHistory();
+        const st = states.get(i);
+        if (st) { ({ history, hindex } = st); restoreHist(); updateUndoButtons(); }
+        else { ctx.drawImage(im, 0, 0); resetHistory(); }
     };
 
     // ── thumbnails (original + one per model result), centered ──
@@ -137,7 +141,11 @@ async function openRmbg(detail) {
     const slider = document.createElement("input");
     slider.type = "range";
     const reset = button("Reset");
-    reset.addEventListener("click", () => loadInto(selected));
+    reset.addEventListener("click", () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(imgs[selected], 0, 0);
+        resetHistory();
+    });
     const syncSlider = () => {
         if (tool === "fill") {
             slider.min = "1"; slider.max = "150"; slider.value = String(strength);
