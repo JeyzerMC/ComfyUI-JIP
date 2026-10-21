@@ -74,6 +74,7 @@ async function openRmbg(detail) {
     const loadInto = (i) => {
         if (selected >= 0) states.set(selected, { history, hindex });
         selected = i;
+        setOriginal(false);
         const im = imgs[i];
         canvas.width = im.naturalWidth;
         canvas.height = im.naturalHeight;
@@ -145,6 +146,28 @@ async function openRmbg(detail) {
     const leftGroup = document.createElement("div");
     leftGroup.style.cssText = "display:flex;gap:6px;align-items:center;";
     leftGroup.append(undoBtn, redoBtn);
+
+    // Original / result toggle (#48): the overlay sits above the canvas, so it
+    // also blocks painting and fill while shown.
+    const origBtn = button("Original");
+    origBtn.title = "Show the original image";
+    const origView = document.createElement("img");
+    origView.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:none;border-radius:4px;";
+    let showOriginal = false;
+    const setOriginal = (on) => {
+        showOriginal = on;
+        origView.style.display = on ? "block" : "none";
+        origBtn.style.borderColor = on ? "#4a9eff" : "#555";
+        confirmBtn.disabled = on;
+        confirmBtn.style.opacity = on ? "0.4" : "1";
+        ring.style.display = "none";
+    };
+    origBtn.addEventListener("click", () => setOriginal(!showOriginal));
+    if (baseImg) {
+        origView.src = baseImg.src;
+        canvasWrap.appendChild(origView);
+        leftGroup.append(origBtn);
+    }
 
     // center group: size/strength slider + reset
     const sizeLabel = document.createElement("span");
