@@ -28,9 +28,10 @@ async function openRmbg(detail) {
 
     // ── editing canvas in a centered, scrollable viewport (zoom support) ──
     const viewport = document.createElement("div");
-    viewport.style.cssText = "display:flex;justify-content:center;align-items:flex-start;overflow:auto;max-width:72vw;max-height:64vh;margin:0 auto;";
+    // Center with margin:auto, not justify-content: it keeps the scroll origin when the canvas overflows.
+    viewport.style.cssText = "display:flex;align-items:flex-start;overflow:auto;max-width:72vw;max-height:64vh;margin:0 auto;";
     const canvasWrap = document.createElement("div");
-    canvasWrap.style.cssText = "position:relative;display:inline-block;line-height:0;flex:0 0 auto;";
+    canvasWrap.style.cssText = "position:relative;display:inline-block;line-height:0;flex:0 0 auto;margin:0 auto;";
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "background:#111;border:1px solid #333;border-radius:4px;cursor:crosshair;touch-action:none;display:block;";
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -111,6 +112,16 @@ async function openRmbg(detail) {
     zoomOut.addEventListener("click", () => setZoom(zoom / 1.25));
     zoomIn.addEventListener("click", () => setZoom(zoom * 1.25));
     zoomFit.addEventListener("click", () => setZoom(1));
+    // Mouse-wheel zoom, keeping the point under the cursor fixed (#47).
+    viewport.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const r = canvas.getBoundingClientRect();
+        const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+        setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+        const r2 = canvas.getBoundingClientRect();
+        viewport.scrollLeft += r2.left + fx * r2.width - e.clientX;
+        viewport.scrollTop += r2.top + fy * r2.height - e.clientY;
+    }, { passive: false });
     const zoomRow = document.createElement("div");
     zoomRow.style.cssText = "display:flex;gap:6px;align-items:center;justify-content:center;margin-bottom:8px;";
     zoomRow.append(zoomOut, zoomLabel, zoomIn, zoomFit);
