@@ -67,4 +67,5 @@ class JIPResize(io.ComfyNode):
         out = payload.copy()
         out.set_working(alt)
         out.dims = (int(alt.shape[2]), int(alt.shape[1]))
+        out.skip_rmbg = bool(result.get("skip_rmbg"))
         return io.NodeOutput(out)

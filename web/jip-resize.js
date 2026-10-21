@@ -298,14 +298,20 @@ async function openResize(detail) {
 
     // ── footer ──
     const cancelBtn = button("Cancel");
+    const skipBtn = button("Confirm and Skip RMBG");
     const confirmBtn = button("Confirm", true);
     cancelBtn.addEventListener("click", () => { modal.close(); cancelToken(token); });
+    skipBtn.addEventListener("click", () => {
+        const dataUrl = exportImage();
+        modal.close();
+        resolveToken(token, { image: dataUrl, skip_rmbg: true });
+    });
     confirmBtn.addEventListener("click", () => {
         const dataUrl = exportImage();
         modal.close();
         resolveToken(token, { image: dataUrl });
     });
-    modal.footer.append(cancelBtn, confirmBtn);
+    modal.footer.append(cancelBtn, skipBtn, confirmBtn);
 
     setMode("crop");
     syncScaleLabel();

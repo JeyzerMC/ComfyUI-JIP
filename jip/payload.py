@@ -31,6 +31,9 @@ class JIPPayload:
     consume: bool = False
     # Absolute path of the source image from JIP Load (for consume).
     source_path: str = ""
+    # Set by JIP Resize's "Confirm and Skip RMBG"; the next JIP RMBG passes
+    # through and clears it (#45).
+    skip_rmbg: bool = False
 
     def copy(self) -> "JIPPayload":
         return JIPPayload(
@@ -42,6 +45,7 @@ class JIPPayload:
             output_name=self.output_name,
             consume=self.consume,
             source_path=self.source_path,
+            skip_rmbg=self.skip_rmbg,
         )
 
     # -- role accessors (#17) -------------------------------------------------

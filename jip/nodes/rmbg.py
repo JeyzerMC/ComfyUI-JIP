@@ -58,6 +58,12 @@ class JIPRMBG(io.ComfyNode):
         if payload is None or not getattr(payload, "images", None):
             raise ValueError("JIP RMBG: payload has no images (connect JIP Load).")
 
+        # JIP Resize's "Confirm and Skip RMBG" (#45): pass the working image through.
+        if payload.skip_rmbg:
+            out = payload.copy()
+            out.skip_rmbg = False
+            return io.NodeOutput(out)
+
         try:
             from rembg import remove
         except Exception as exc:
