@@ -5,7 +5,8 @@
 //     centered on the image (a zoom inside a constant-size crop frame) (#38).
 //   - The rectangle starts at the node's per-orientation dims (default_w/h),
 //     centered, clamped to the image. Drag the body to move, an edge to change
-//     one dimension, a corner to change both (no aspect lock).
+//     one dimension, a corner to change both (no aspect lock). Drags keep the
+//     outline inside the image (or the image inside it, if scaled smaller) (#49).
 //   - Width/Height fields (center) show the rectangle's pixel dimensions, update
 //     live, and can be typed into. Fit/Crop buttons (right).
 //   - Crop to outline: output = the rectangle's image region at its W x H.
@@ -137,21 +138,26 @@ async function openResize(detail) {
 
     const CURSORS = { tl: "nwse-resize", br: "nwse-resize", tr: "nesw-resize", bl: "nesw-resize", t: "ns-resize", b: "ns-resize", l: "ew-resize", r: "ew-resize", move: "move" };
 
+    // Keep the outline inside the image on an axis; when the image was scaled
+    // smaller than the outline, keep the image inside the outline instead.
+    const clampAxis = (pos, size, limit) => size <= limit ? clamp(pos, 0, limit - size) : clamp(pos, limit - size, 0);
+
     // Apply a drag for the active handle, keeping the opposite side(s) fixed.
-    // The rectangle is free to extend past the image bounds (#36); only MIN/MAX
-    // and a generous coordinate range constrain it.
+    // Edges stop at the image (or where they already are, if outside it).
     const applyDrag = (handle, x, y, orig, start) => {
         if (handle === "move") {
-            rect.x = clamp(orig.x + (x - start.x), -MAX, MAX);
-            rect.y = clamp(orig.y + (y - start.y), -MAX, MAX);
+            rect.x = clampAxis(orig.x + (x - start.x), rect.w, iw);
+            rect.y = clampAxis(orig.y + (y - start.y), rect.h, ih);
             return;
         }
         let { x: nx, y: ny, w: nw, h: nh } = orig;
         const right = orig.x + orig.w, bottom = orig.y + orig.h;
-        if (handle.includes("l")) { nx = clamp(x, -MAX, right - MIN); nw = right - nx; }
-        if (handle.includes("r")) { nw = clamp(x, orig.x + MIN, orig.x + MAX) - orig.x; nx = orig.x; }
-        if (handle.includes("t")) { ny = clamp(y, -MAX, bottom - MIN); nh = bottom - ny; }
-        if (handle.includes("b")) { nh = clamp(y, orig.y + MIN, orig.y + MAX) - orig.y; ny = orig.y; }
+        const minX = Math.min(0, orig.x), maxX = Math.max(iw, right);
+        const minY = Math.min(0, orig.y), maxY = Math.max(ih, bottom);
+        if (handle.includes("l")) { nx = clamp(x, minX, right - MIN); nw = right - nx; }
+        if (handle.includes("r")) { nw = clamp(x, orig.x + MIN, maxX) - orig.x; nx = orig.x; }
+        if (handle.includes("t")) { ny = clamp(y, minY, bottom - MIN); nh = bottom - ny; }
+        if (handle.includes("b")) { nh = clamp(y, orig.y + MIN, maxY) - orig.y; ny = orig.y; }
         rect = { x: nx, y: ny, w: nw, h: nh };
     };
 
@@ -291,7 +297,7 @@ async function openResize(detail) {
     }
 
     const hint = document.createElement("div");
-    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size); Fit W / Fit H scale it to the outline's width / height. Drag the rectangle to move, an edge to resize one side, a corner to resize freely. P / L / H / S set the outline to portrait, landscape, half screen or square from the node's S and L. Fit to outline stretches the whole image to the W x H; Crop crops to the rectangle.";
+    hint.textContent = "Scale the image inside the crop frame with the slider (the outline keeps its size); Fit W / Fit H scale it to the outline's width / height. Drag the rectangle to move, an edge to resize one side, a corner to resize freely; the outline stays inside the image. P / L / H / S set the outline to portrait, landscape, half screen or square from the node's S and L. Fit to outline stretches the whole image to the W x H; Crop crops to the rectangle.";
     hint.style.cssText = "font-size:11px;color:#888;margin-top:6px;";
 
     modal.body.append(canvasWrap, bottomRow, presetRow, hint);
